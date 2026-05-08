@@ -1,7 +1,7 @@
 {
   "name": "@proofcomputer/switchboard-express-demo",
-  "version": "0.1.0",
-  "description": "Small Express demo app for Switchboard launch-demo.",
+  "version": "0.1.1",
+  "description": "Rich Express demo app for Switchboard launch-demo.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/proof-computer/switchboard-express-demo.git"
@@ -22,10 +22,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "npm run build",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "pack:dry-run": "npm pack --dry-run --json"
   },
   "dependencies": {
     "@proofcomputer/switchboard-express": "github:proof-computer/switchboard-express#v0.1.0",
+    "@proofcomputer/switchboard-sdk": "github:proof-computer/switchboard-sdk#v0.1.0",
     "express": "^5.2.1"
   },
   "devDependencies": {

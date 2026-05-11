@@ -19,6 +19,12 @@ export function renderDemoPage(status: Record<string, any>): string {
   const relayDns = status.relayDiagnostics?.dns;
   const deployment = deploymentInfo(status.ids?.deploymentId);
   const deploymentLink = deploymentHtml(deployment);
+  const observability = observabilityPayload(status);
+  const routeMetrics = routeMetricsPayload(status);
+  const firstRouteMetric = firstRouteMetricRow(status);
+  const localTraffic = status.traffic?.local;
+  const validatorSummary = observability?.validators;
+  const dns = observability?.dns;
 
   return `<!doctype html>
 <html lang="en">
@@ -145,7 +151,7 @@ export function renderDemoPage(status: Record<string, any>): string {
     }
     .summary {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
       margin: 18px 0;
     }
@@ -296,6 +302,7 @@ export function renderDemoPage(status: Record<string, any>): string {
       ${metricHtml("TLS Certificate", certificate?.issuer ?? status.certificate?.state, certificate?.notAfter ? `expires ${formatDateTime(certificate.notAfter)}` : undefined)}
       ${metricHtml("Hub Registration", registration?.relayResponse?.txHash ? shortValue(registration.relayResponse.txHash) : registration?.state, blockSecondaryHtml(registration?.relayResponse?.blockNumber))}
       ${metricHtml("Acurast Runtime", runtimeLabel(status), deploymentLink)}
+      ${metricHtml("Route Traffic", formatBytes(counterValue(firstRouteMetric, "downstreamBytesSentTotal")), routeMetricDeltaHtml(firstRouteMetric, "downstreamBytesSentTotal"))}
     </section>
 
     <section class="grid">
@@ -308,6 +315,45 @@ export function renderDemoPage(status: Record<string, any>): string {
           ...optionalRow("Gateway ID", knownGatewayId(status)),
           ["Relay DNS", relayDns?.ok ? formatAddressList(relayDns.addresses) : relayDns?.error],
           ["Relay health", relayHealth?.ok ? `HTTP ${relayHealth.status} in ${relayHealth.elapsedMs}ms` : relayHealth?.error]
+        ])}
+      </article>
+
+      <article>
+        <h2>Gateway</h2>
+        ${tableHtml([
+          ["Gateway ID", observability?.gateway?.gatewayId ?? knownGatewayId(status)],
+          ["Operator", hashHtml(observability?.gateway?.operatorId ?? status.routing?.operatorId)],
+          ["Processor", hashHtml(observability?.gateway?.processorId ?? status.routing?.processorId)],
+          ["Capability report", observability?.gateway?.capability?.latestReport?.reportId],
+          ["Route state", boolLabel(observability?.gateway?.capability?.routeStateAvailable)],
+          ["Active routes", observability?.gateway?.capability?.activeRouteCount],
+          ["Capacity", observability?.gateway?.capability?.routeCapacity],
+          ["Public addresses", observability?.gateway?.capability?.publicAddresses]
+        ])}
+      </article>
+
+      <article>
+        <h2>DNS & CNAME</h2>
+        ${tableHtml([
+          ["Canonical hostname", dns?.canonical?.hostname ?? status.public?.hostname],
+          ["Canonical DNS", dns?.canonical?.materialization?.status ?? dns?.canonical?.materialization?.state],
+          ["DNS target", dnsTargetSummary(dns?.canonical?.materialization)],
+          ["Customer hostnames", customerHostnamesSummary(dns?.customerHostnames)],
+          ["ACME records", acmeRecordsSummary(dns?.customerHostnames)]
+        ])}
+      </article>
+
+      <article>
+        <h2>Route Traffic</h2>
+        ${tableHtml([
+          ["Local requests", localTraffic?.requestsTotal],
+          ["Local sent", formatBytes(localTraffic?.bytesSentTotal)],
+          ["Local received", formatBytes(localTraffic?.bytesReceivedTotal)],
+          ["Gateway connections", counterValue(firstRouteMetric, "downstreamConnectionsTotal")],
+          ["Gateway received", formatBytes(counterValue(firstRouteMetric, "downstreamBytesReceivedTotal"))],
+          ["Gateway sent", formatBytes(counterValue(firstRouteMetric, "downstreamBytesSentTotal"))],
+          ["Metric source", routeMetrics?.source],
+          ["Sampled", formatDateTime(firstRouteMetric?.sampledAt)]
         ])}
       </article>
 
@@ -359,6 +405,20 @@ export function renderDemoPage(status: Record<string, any>): string {
       </article>
 
       <article>
+        <h2>Validators</h2>
+        ${tableHtml([
+          ["State", validatorStateSummary(validatorSummary)],
+          ["Assigned validators", validatorSummary?.counts?.validators],
+          ["Work packages", validatorSummary?.counts?.work],
+          ["Recent reports", validatorSummary?.counts?.reports],
+          ["Successes", validatorSummary?.counts?.successes],
+          ["Failures", validatorSummary?.counts?.failures],
+          ["Latest report", latestValidatorReportSummary(validatorSummary?.latestReport)],
+          ["Validators", validatorRowsSummary(validatorSummary?.validators)]
+        ])}
+      </article>
+
+      <article>
         <h2>Runtime Details</h2>
         ${tableHtml([
           ["Node", status.runtime?.nodeVersion],
@@ -376,6 +436,8 @@ export function renderDemoPage(status: Record<string, any>): string {
       ${tableHtml([
         ["Registration", status.registration],
         ["Certificate", status.certificate],
+        ["Traffic", status.traffic],
+        ["Observability", status.observability],
         ["Relay diagnostics", status.relayDiagnostics],
         ["Network", status.network],
         ["Environment presence", status.envPresence]
@@ -537,6 +599,154 @@ function formatAddressList(addresses: unknown): string | undefined {
     })
     .filter(Boolean)
     .join(", ");
+}
+
+function observabilityPayload(status: Record<string, any>): Record<string, any> | undefined {
+  const payload = status.observability?.payload ?? status.observability;
+  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload : undefined;
+}
+
+function routeMetricsPayload(status: Record<string, any>): Record<string, any> | undefined {
+  const payload = observabilityPayload(status)?.routeMetrics ?? status.traffic?.routeMetrics;
+  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload : undefined;
+}
+
+function firstRouteMetricRow(status: Record<string, any>): Record<string, any> | undefined {
+  const routes = routeMetricsPayload(status)?.routes;
+  return Array.isArray(routes) && routes[0] && typeof routes[0] === "object" ? routes[0] : undefined;
+}
+
+function counterValue(metric: Record<string, any> | undefined, key: string): string | undefined {
+  const value = metric?.counters?.[key];
+  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
+}
+
+function routeMetricDeltaHtml(metric: Record<string, any> | undefined, key: string): HtmlFragment | undefined {
+  const delta = metric?.delta?.[key];
+  if (delta === undefined || delta === null || delta === "") {
+    return undefined;
+  }
+  const formatted = key.toLowerCase().includes("bytes") ? formatBytes(delta) : String(delta);
+  const from = formatDateTime(metric?.deltaWindow?.from);
+  const to = formatDateTime(metric?.deltaWindow?.to);
+  return htmlFragment(`+${escapeHtml(formatted ?? String(delta))}${from && to ? ` from ${escapeHtml(from)} to ${escapeHtml(to)}` : ""}`);
+}
+
+function formatBytes(value: unknown): string | undefined {
+  const text = scalarValue(value);
+  if (!text || !/^[0-9]+$/.test(text)) {
+    return undefined;
+  }
+  const bytes = Number(text);
+  if (!Number.isFinite(bytes)) {
+    return `${text} B`;
+  }
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let current = bytes / 1024;
+  for (const unit of units) {
+    if (current < 1024) {
+      return `${current.toFixed(current >= 10 ? 1 : 2)} ${unit}`;
+    }
+    current /= 1024;
+  }
+  return `${current.toFixed(1)} PB`;
+}
+
+function dnsTargetSummary(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    stringValue(record.target) ??
+    stringValue(record.address) ??
+    stringValue(record.acceptedIp) ??
+    stringValue(record.gatewayIp) ??
+    stringValue(record.lastError) ??
+    undefined
+  );
+}
+
+function customerHostnamesSummary(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.available === false) {
+    return stringValue(record.reason) ?? "unavailable";
+  }
+  const hostnames = Array.isArray(record.hostnames) ? record.hostnames : [];
+  if (hostnames.length === 0) {
+    return undefined;
+  }
+  return hostnames
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return [stringValue(row.customerHostname), stringValue(row.status)].filter(Boolean).join(" ");
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function acmeRecordsSummary(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const hostnames = Array.isArray((value as Record<string, unknown>).hostnames)
+    ? ((value as Record<string, unknown>).hostnames as unknown[])
+    : [];
+  const records = hostnames.flatMap((item) => {
+    const record = item as Record<string, any>;
+    return [
+      record.certificateValidation?.instructions?.summary,
+      record.certificateValidation?.dns01Challenge?.name
+    ].filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+  });
+  return records.length > 0 ? records : undefined;
+}
+
+function validatorStateSummary(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const validators = (value as Record<string, unknown>).validators;
+  if (!Array.isArray(validators) || validators.length === 0) {
+    return "unknown";
+  }
+  if (validators.some((item) => (item as Record<string, unknown>).status === "unhealthy")) {
+    return "unhealthy";
+  }
+  if (validators.some((item) => (item as Record<string, unknown>).status === "healthy")) {
+    return "healthy";
+  }
+  return "unknown";
+}
+
+function latestValidatorReportSummary(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  return [
+    stringValue(record.reportId),
+    record.success === true ? "healthy" : record.success === false ? "unhealthy" : undefined,
+    formatDateTime(record.checkedAt)
+  ].filter(Boolean).join(" ");
+}
+
+function validatorRowsSummary(value: unknown): unknown {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  return value.slice(0, 6).map((item) => {
+    const record = item as Record<string, unknown>;
+    return [
+      stringValue(record.validatorId),
+      stringValue(record.status),
+      formatDateTime(record.latestReportAt)
+    ].filter(Boolean).join(" ");
+  });
 }
 
 function formatDateTime(value: unknown): string | undefined {

@@ -1,0 +1,197 @@
+{
+  "ok": true,
+  "name": "Switchboard Express Demo",
+  "now": "2026-05-11T12:00:10.000Z",
+  "startedAt": "2026-05-11T12:00:00.000Z",
+  "uptimeSeconds": 10,
+  "public": {
+    "hostname": "demo.switchboard.example",
+    "customerHostnames": ["app.example.com"],
+    "certificateHostnames": ["demo.switchboard.example", "app.example.com"],
+    "url": "https://demo.switchboard.example/",
+    "challengeUrl": "https://demo.switchboard.example/.well-known/proofcomputer/challenge?nonce=demo"
+  },
+  "ids": {
+    "deploymentId": "54098",
+    "sessionId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "jobId": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "jobSigner": "0x1000000000000000000000000000000000000001",
+    "signerMode": "acurast-secp256k1"
+  },
+  "routing": {
+    "relayUrl": "https://control.switchboard.proof.computer",
+    "relayHost": "control.switchboard.proof.computer",
+    "operatorId": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "processorId": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "gatewayId": "switchboard-az-01",
+    "registryAddress": "0x65d6B76BeC50F46D198fFa3598E381a298025Da0",
+    "chainId": "420420419"
+  },
+  "registration": {
+    "state": "registered"
+  },
+  "certificate": {
+    "state": "active",
+    "hostnames": ["demo.switchboard.example", "app.example.com"],
+    "certificates": [
+      {
+        "hostname": "demo.switchboard.example",
+        "issuer": "ZeroSSL RSA DV SSL CA 2",
+        "notAfter": "2026-08-04T23:59:59.000Z"
+      }
+    ]
+  },
+  "challenges": {
+    "count": 2,
+    "lastAt": "2026-05-11T12:00:05.000Z"
+  },
+  "traffic": {
+    "local": {
+      "startedAt": "2026-05-11T12:00:00.000Z",
+      "requestsTotal": 12,
+      "bytesReceivedTotal": 480,
+      "bytesSentTotal": 32768,
+      "lastRequestAt": "2026-05-11T12:00:09.000Z",
+      "paths": [
+        {
+          "path": "/",
+          "count": 6,
+          "bytesReceived": 240,
+          "bytesSent": 24576,
+          "lastStatus": 200,
+          "lastAt": "2026-05-11T12:00:09.000Z"
+        }
+      ]
+    }
+  },
+  "observability": {
+    "checkedAt": "2026-05-11T12:00:10.000Z",
+    "ok": true,
+    "status": 200,
+    "payload": {
+      "ok": true,
+      "intentId": "di_demo",
+      "generatedAt": "2026-05-11T12:00:10.000Z",
+      "gateway": {
+        "operatorId": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "gatewayId": "switchboard-az-01",
+        "processorId": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "capability": {
+          "available": true,
+          "latestReport": {
+            "reportId": "gateway-capability-1778500810-7",
+            "reportedAt": "2026-05-11T12:00:10.000Z"
+          },
+          "activeRouteCount": 1,
+          "routeCapacity": 500,
+          "publicAddresses": ["198.51.100.10"],
+          "routeStateAvailable": true,
+          "routeMetrics": {
+            "available": true,
+            "source": "operator-capability-report",
+            "routes": [
+              {
+                "routeId": "demo-route",
+                "hostname": "demo.switchboard.example",
+                "statPrefix": "sni_demo.switchboard.example",
+                "sampledAt": "2026-05-11T12:00:10.000Z",
+                "counters": {
+                  "downstreamConnectionsTotal": "21",
+                  "downstreamBytesReceivedTotal": "16384",
+                  "downstreamBytesSentTotal": "65536"
+                },
+                "delta": {
+                  "downstreamConnectionsTotal": "3",
+                  "downstreamBytesReceivedTotal": "2048",
+                  "downstreamBytesSentTotal": "8192"
+                },
+                "deltaWindow": {
+                  "from": "2026-05-11T12:00:00.000Z",
+                  "to": "2026-05-11T12:00:10.000Z"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "dns": {
+        "available": true,
+        "canonical": {
+          "hostname": "demo.switchboard.example",
+          "materialization": {
+            "status": "propagated",
+            "target": "198.51.100.10"
+          }
+        },
+        "customerHostnames": {
+          "available": true,
+          "count": 1,
+          "hostnames": [
+            {
+              "customerHostname": "app.example.com",
+              "status": "dns_validated",
+              "certificateValidation": {
+                "instructions": {
+                  "summary": "Create CNAME _acme-challenge.app.example.com -> _acme-challenge.demo.switchboard.example"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "routeMetrics": {
+        "available": true,
+        "source": "operator-capability-report",
+        "routes": [
+          {
+            "routeId": "demo-route",
+            "hostname": "demo.switchboard.example",
+            "statPrefix": "sni_demo.switchboard.example",
+            "sampledAt": "2026-05-11T12:00:10.000Z",
+            "counters": {
+              "downstreamConnectionsTotal": "21",
+              "downstreamBytesReceivedTotal": "16384",
+              "downstreamBytesSentTotal": "65536"
+            }
+          }
+        ]
+      },
+      "validators": {
+        "available": true,
+        "counts": {
+          "work": 1,
+          "enabledWork": 1,
+          "reports": 3,
+          "successes": 3,
+          "failures": 0,
+          "validators": 2
+        },
+        "latestReport": {
+          "reportId": "validation-demo-3",
+          "checkedAt": "2026-05-11T12:00:09.000Z",
+          "success": true
+        },
+        "validators": [
+          {
+            "validatorId": "validator-a",
+            "status": "healthy",
+            "latestReportAt": "2026-05-11T12:00:09.000Z"
+          },
+          {
+            "validatorId": "validator-b",
+            "status": "healthy",
+            "latestReportAt": "2026-05-11T12:00:04.000Z"
+          }
+        ]
+      }
+    }
+  },
+  "runtime": {
+    "nodeVersion": "v24.5.0",
+    "platform": "android",
+    "arch": "arm64",
+    "hasStd": true
+  },
+  "network": {},
+  "envPresence": {}
+}

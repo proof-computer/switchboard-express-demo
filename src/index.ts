@@ -44,6 +44,9 @@ interface DemoState {
   lastChallenge?: Record<string, unknown>;
   certificates: SwitchboardManagedCertificate[];
   relayDiagnostics?: Record<string, unknown>;
+  observability?: RelayObservabilitySnapshot;
+  observabilityTimer?: NodeJS.Timeout;
+  traffic: TrafficState;
   signerMode?: string;
   jobSigner?: string;
   local?: {
@@ -52,6 +55,30 @@ interface DemoState {
     port: number;
     url: string;
   };
+}
+
+interface RelayObservabilitySnapshot {
+  checkedAt: string;
+  ok: boolean;
+  status?: number;
+  payload?: Record<string, unknown>;
+  error?: string;
+}
+
+interface TrafficState {
+  startedAt: string;
+  requestsTotal: number;
+  bytesReceivedTotal: number;
+  bytesSentTotal: number;
+  lastRequestAt?: string;
+  paths: Record<string, {
+    path: string;
+    count: number;
+    bytesReceived: number;
+    bytesSent: number;
+    lastStatus?: number;
+    lastAt?: string;
+  }>;
 }
 
 export function createSwitchboardExpressDemoApp(
@@ -80,7 +107,8 @@ export async function startSwitchboardExpressDemo(
     title: options.title ?? "Switchboard Express Demo",
     startedAt: new Date().toISOString(),
     challengeCount: 0,
-    certificates: []
+    certificates: [],
+    traffic: createTrafficState()
   };
   void resolveDemoJobSigner(runtime, state);
 
@@ -88,6 +116,7 @@ export async function startSwitchboardExpressDemo(
     title: state.title,
     status: () => demoStatus(runtime, state)
   });
+  app.use(recordTraffic(state));
   app.use(express.json());
 
   if (options.mountChallenge !== false) {
@@ -151,6 +180,7 @@ export async function startSwitchboardExpressDemo(
   if (runtime.configValue("SWITCHBOARD_RELAY_DIAGNOSTICS") === "true") {
     void runRelayDiagnosticsOnce(runtime, state);
   }
+  startObservabilityPolling(runtime, state, server);
 
   return { runtime, server, url: state.local.url };
 }
@@ -212,6 +242,12 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
       lastAt: state.lastChallengeAt,
       last: state.lastChallenge
     },
+    traffic: {
+      local: trafficSummary(state.traffic),
+      relay: state.observability?.payload?.traffic,
+      routeMetrics: state.observability?.payload?.routeMetrics
+    },
+    observability: state.observability,
     acurast: acurastRuntimeStatus(runtime),
     relayDiagnostics: state.relayDiagnostics,
     runtime: runtimeSummary(),
@@ -232,6 +268,9 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
       "SWITCHBOARD_INTENT_ID",
       "SWITCHBOARD_INTENT_GROUP_ID",
       "SWITCHBOARD_INTENT_TOKEN",
+      "SWITCHBOARD_OBSERVABILITY",
+      "SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS",
+      "SWITCHBOARD_OBSERVABILITY_TIMEOUT_MS",
       "SWITCHBOARD_LOG_URL",
       "SWITCHBOARD_LOG_TOKEN",
       "SWITCHBOARD_LOG_ENCRYPTION_KEY",
@@ -276,6 +315,148 @@ function certificateState(
       notAfter: certificate.notAfter
     }))
   };
+}
+
+function createTrafficState(): TrafficState {
+  return {
+    startedAt: new Date().toISOString(),
+    requestsTotal: 0,
+    bytesReceivedTotal: 0,
+    bytesSentTotal: 0,
+    paths: {}
+  };
+}
+
+function recordTraffic(state: DemoState): express.RequestHandler {
+  return (request, response, next) => {
+    const received = headerNumber(request.headers["content-length"]);
+    let sent = 0;
+    const originalWrite = response.write.bind(response) as (...args: any[]) => boolean;
+    const originalEnd = response.end.bind(response) as (...args: any[]) => typeof response;
+    (response as Record<string, any>).write = (...args: any[]) => {
+      sent += chunkLength(args[0]);
+      return originalWrite(...args);
+    };
+    (response as Record<string, any>).end = (...args: any[]) => {
+      sent += chunkLength(args[0]);
+      return originalEnd(...args);
+    };
+    response.on("finish", () => {
+      const at = new Date().toISOString();
+      const pathKey = request.path || request.url || "/";
+      const pathStats = state.traffic.paths[pathKey] ?? {
+        path: pathKey,
+        count: 0,
+        bytesReceived: 0,
+        bytesSent: 0
+      };
+      pathStats.count += 1;
+      pathStats.bytesReceived += received;
+      pathStats.bytesSent += sent;
+      pathStats.lastStatus = response.statusCode;
+      pathStats.lastAt = at;
+      state.traffic.paths[pathKey] = pathStats;
+      state.traffic.requestsTotal += 1;
+      state.traffic.bytesReceivedTotal += received;
+      state.traffic.bytesSentTotal += sent;
+      state.traffic.lastRequestAt = at;
+    });
+    next();
+  };
+}
+
+function trafficSummary(traffic: TrafficState): Record<string, unknown> {
+  return {
+    startedAt: traffic.startedAt,
+    requestsTotal: traffic.requestsTotal,
+    bytesReceivedTotal: traffic.bytesReceivedTotal,
+    bytesSentTotal: traffic.bytesSentTotal,
+    lastRequestAt: traffic.lastRequestAt,
+    paths: Object.values(traffic.paths)
+      .sort((left, right) => right.count - left.count || left.path.localeCompare(right.path))
+      .slice(0, 10)
+  };
+}
+
+function headerNumber(value: string | string[] | undefined): number {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw || !/^[0-9]+$/.test(raw)) {
+    return 0;
+  }
+  return Number(raw);
+}
+
+function chunkLength(value: unknown): number {
+  if (typeof value === "string") {
+    return Buffer.byteLength(value);
+  }
+  if (Buffer.isBuffer(value)) {
+    return value.length;
+  }
+  if (value instanceof Uint8Array) {
+    return value.byteLength;
+  }
+  return 0;
+}
+
+function startObservabilityPolling(runtime: SwitchboardRuntime, state: DemoState, server: HttpServer): void {
+  if (runtime.configValue("SWITCHBOARD_OBSERVABILITY") === "false") {
+    return;
+  }
+  const relayUrl = runtime.configValue("SWITCHBOARD_RELAY_URL") ?? runtime.configValue("RELAY_URL");
+  const intentId = runtime.configValue("SWITCHBOARD_INTENT_ID");
+  const token = runtime.configValue("SWITCHBOARD_INTENT_TOKEN");
+  if (!relayUrl || !intentId || !token) {
+    return;
+  }
+  const intervalMs = numberConfig(runtime, "SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS", 10_000);
+  void pollObservabilityOnce(runtime, state, { relayUrl, intentId, token });
+  state.observabilityTimer = setInterval(() => {
+    void pollObservabilityOnce(runtime, state, { relayUrl, intentId, token });
+  }, intervalMs);
+  state.observabilityTimer.unref();
+  server.once("close", () => {
+    if (state.observabilityTimer) {
+      clearInterval(state.observabilityTimer);
+      state.observabilityTimer = undefined;
+    }
+  });
+}
+
+async function pollObservabilityOnce(
+  runtime: SwitchboardRuntime,
+  state: DemoState,
+  input: { relayUrl: string; intentId: string; token: string }
+): Promise<void> {
+  const checkedAt = new Date().toISOString();
+  const timeoutMs = numberConfig(runtime, "SWITCHBOARD_OBSERVABILITY_TIMEOUT_MS", 8_000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs).unref();
+  try {
+    const url = new URL(`/v1/deployment-intents/${encodeURIComponent(input.intentId)}/observability`, input.relayUrl);
+    const response = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${input.token}`
+      },
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => undefined) as Record<string, unknown> | undefined;
+    state.observability = {
+      checkedAt,
+      ok: response.ok,
+      status: response.status,
+      payload,
+      error: response.ok ? undefined : `observability request failed: ${response.status}`
+    };
+  } catch (error) {
+    state.observability = {
+      checkedAt,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function resolveDemoJobSigner(runtime: SwitchboardRuntime, state: DemoState): Promise<void> {

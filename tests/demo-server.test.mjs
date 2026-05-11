@@ -13,8 +13,12 @@ describe("Switchboard Express demo server", () => {
       assert.match(html, /<title>Switchboard demo<\/title>/);
       assert.match(html, /Running on <span class="acurast-accent">Acurast,/);
       assert.match(html, /<h2>Route<\/h2>/);
+      assert.match(html, /<h2>Gateway<\/h2>/);
+      assert.match(html, /<h2>DNS & CNAME<\/h2>/);
+      assert.match(html, /<h2>Route Traffic<\/h2>/);
       assert.match(html, /<h2>Acurast Job<\/h2>/);
       assert.match(html, /<h2>Polkadot Hub<\/h2>/);
+      assert.match(html, /<h2>Validators<\/h2>/);
       assert.doesNotMatch(html, /Health is available at <code>\/health<\/code>/);
 
       assert.equal(status.ok, true);
@@ -37,6 +41,7 @@ describe("Switchboard Express demo server", () => {
         "routing",
         "runtime",
         "startedAt",
+        "traffic",
         "uptimeSeconds"
       ]);
     } finally {

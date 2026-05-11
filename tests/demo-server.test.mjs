@@ -48,4 +48,37 @@ describe("Switchboard Express demo server", () => {
       await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
     }
   });
+
+  it("retries ready reports after the server starts", async () => {
+    let readyReports = 0;
+    const runtime = {
+      deploymentId: undefined,
+      async prepare() {
+        return { certificates: [] };
+      },
+      async log() {},
+      async reportReady() {
+        readyReports += 1;
+      },
+      configValue(name) {
+        return {
+          SWITCHBOARD_READY_REPORT_RETRY_MS: "1",
+          SWITCHBOARD_READY_REPORT_MAX_ATTEMPTS: "2"
+        }[name];
+      },
+      sessionId() {
+        return undefined;
+      },
+      jobId() {
+        return undefined;
+      }
+    };
+    const demo = await startSwitchboardExpressDemo({ runtime, port: 0 });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 2_300));
+      assert.equal(readyReports, 3);
+    } finally {
+      await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
 });

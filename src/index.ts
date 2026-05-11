@@ -46,6 +46,7 @@ interface DemoState {
   relayDiagnostics?: Record<string, unknown>;
   observability?: RelayObservabilitySnapshot;
   observabilityTimer?: NodeJS.Timeout;
+  readyReportTimer?: NodeJS.Timeout;
   traffic: TrafficState;
   signerMode?: string;
   jobSigner?: string;
@@ -176,6 +177,7 @@ export async function startSwitchboardExpressDemo(
     certificateHostnames: state.certificates.map((certificate) => certificate.hostname)
   });
   await runtime.reportReady({ protocol, host, port: actualPort });
+  startReadyReportRetry(runtime, state, server, { protocol, host, port: actualPort });
 
   if (runtime.configValue("SWITCHBOARD_RELAY_DIAGNOSTICS") === "true") {
     void runRelayDiagnosticsOnce(runtime, state);
@@ -376,6 +378,52 @@ function trafficSummary(traffic: TrafficState): Record<string, unknown> {
       .sort((left, right) => right.count - left.count || left.path.localeCompare(right.path))
       .slice(0, 10)
   };
+}
+
+function startReadyReportRetry(
+  runtime: SwitchboardRuntime,
+  state: DemoState,
+  server: HttpServer,
+  details: { protocol: "http" | "https"; host: string; port: number }
+): void {
+  if (runtime.configValue("SWITCHBOARD_READY_REPORT_RETRY") === "false") {
+    return;
+  }
+  const intervalMs = Math.max(1_000, numberConfig(runtime, "SWITCHBOARD_READY_REPORT_RETRY_MS", 10_000));
+  const maxAttempts = numberConfig(runtime, "SWITCHBOARD_READY_REPORT_MAX_ATTEMPTS", 60);
+  let attempts = 0;
+
+  state.readyReportTimer = setInterval(() => {
+    if (relayHealthState(state) === "ready" || attempts >= maxAttempts) {
+      stopReadyReportRetry(state);
+      return;
+    }
+    attempts += 1;
+    void runtime.reportReady(details);
+  }, intervalMs);
+  state.readyReportTimer.unref();
+  server.once("close", () => stopReadyReportRetry(state));
+}
+
+function stopReadyReportRetry(state: DemoState): void {
+  if (!state.readyReportTimer) {
+    return;
+  }
+  clearInterval(state.readyReportTimer);
+  state.readyReportTimer = undefined;
+}
+
+function relayHealthState(state: DemoState): string | undefined {
+  const availability = state.observability?.payload?.availability;
+  if (!availability || typeof availability !== "object" || Array.isArray(availability)) {
+    return undefined;
+  }
+  const health = (availability as Record<string, unknown>).health;
+  if (!health || typeof health !== "object" || Array.isArray(health)) {
+    return undefined;
+  }
+  const value = (health as Record<string, unknown>).state;
+  return typeof value === "string" ? value : undefined;
 }
 
 function headerNumber(value: string | string[] | undefined): number {

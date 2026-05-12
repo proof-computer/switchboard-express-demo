@@ -38,11 +38,13 @@ export interface SwitchboardExpressDemoServer {
 
 interface DemoState {
   title: string;
+  appVersion?: string;
   startedAt: string;
   challengeCount: number;
   lastChallengeAt?: string;
   lastChallenge?: Record<string, unknown>;
   certificates: SwitchboardManagedCertificate[];
+  registration?: Record<string, unknown>;
   relayDiagnostics?: Record<string, unknown>;
   observability?: RelayObservabilitySnapshot;
   observabilityTimer?: NodeJS.Timeout;
@@ -106,6 +108,7 @@ export async function startSwitchboardExpressDemo(
   const runtime = isRuntime(options.runtime) ? options.runtime : createSwitchboardRuntime(options.runtime);
   const state: DemoState = {
     title: options.title ?? "Switchboard Express Demo",
+    appVersion: runtime.configValue("SWITCHBOARD_DEMO_VERSION") ?? process.env.SWITCHBOARD_DEMO_VERSION ?? process.env.npm_package_version,
     startedAt: new Date().toISOString(),
     challengeCount: 0,
     certificates: [],
@@ -153,6 +156,11 @@ export async function startSwitchboardExpressDemo(
 
   const prepared = await runtime.prepare();
   state.certificates = prepared.certificates;
+  const registration = (prepared as unknown as Record<string, unknown>).registration;
+  state.registration =
+    registration && typeof registration === "object" && !Array.isArray(registration)
+      ? (registration as Record<string, unknown>)
+      : undefined;
   await resolveDemoJobSigner(runtime, state);
 
   const host = options.host ?? runtime.configValue("SWITCHBOARD_HOST") ?? runtime.configValue("PROOF_INGRESS_HOST") ?? "127.0.0.1";
@@ -237,7 +245,7 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
       registryAddress: runtime.configValue("INGRESS_REGISTRY_ADDRESS"),
       chainId: runtime.configValue("CHAIN_ID")
     },
-    registration: inferredRegistrationState(runtime),
+    registration: inferredRegistrationState(runtime, state),
     certificate: certificateState(runtime, state.certificates, certificateHostnames),
     challenges: {
       count: state.challengeCount,
@@ -252,7 +260,7 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
     observability: state.observability,
     acurast: acurastRuntimeStatus(runtime),
     relayDiagnostics: state.relayDiagnostics,
-    runtime: runtimeSummary(),
+    runtime: runtimeSummary(runtime, state),
     network: networkAddressSummary(),
     envPresence: configPresence(runtime, [
       "RELAY_URL",
@@ -282,7 +290,7 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
   };
 }
 
-function inferredRegistrationState(runtime: SwitchboardRuntime): Record<string, unknown> {
+function inferredRegistrationState(runtime: SwitchboardRuntime, state: DemoState): Record<string, unknown> {
   const missing = requiredRegistrationConfigNames().filter((name) => !runtime.configValue(name));
   if (missing.length > 0) {
     return {
@@ -290,9 +298,13 @@ function inferredRegistrationState(runtime: SwitchboardRuntime): Record<string, 
       missing
     };
   }
-  return {
+  const registration: Record<string, unknown> = {
     state: "registered"
   };
+  if (state.registration?.relayResponse !== undefined) {
+    registration.relayResponse = state.registration.relayResponse;
+  }
+  return registration;
 }
 
 function certificateState(
@@ -573,8 +585,13 @@ function acurastRuntimeStatus(runtime: SwitchboardRuntime): Record<string, unkno
   };
 }
 
-function runtimeSummary(): Record<string, unknown> {
+function runtimeSummary(runtime?: SwitchboardRuntime, state?: DemoState): Record<string, unknown> {
   const std = acurastStd();
+  const appVersion =
+    state?.appVersion ??
+    runtime?.configValue("SWITCHBOARD_DEMO_VERSION") ??
+    process.env.SWITCHBOARD_DEMO_VERSION ??
+    process.env.npm_package_version;
   return {
     nodeVersion: process.version,
     platform: process.platform,
@@ -589,7 +606,7 @@ function runtimeSummary(): Record<string, unknown> {
     hasStdDeviceGetAddress: typeof std?.device?.getAddress === "function",
     hasStdSignersSecp256k1: typeof std?.signers?.secp256k1?.sign === "function",
     hasStdNetAddAllowedHostnames: typeof std?.net?.addAllowedHostnames === "function",
-    appVersion: process.env.npm_package_version
+    appVersion
   };
 }
 

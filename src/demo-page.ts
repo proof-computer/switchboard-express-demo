@@ -377,8 +377,8 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["Registry", hashHtml(status.routing?.registryAddress)],
           ["Session", hashHtml(status.ids?.sessionId)],
           ["Registration", status.registration?.state],
-          ["Tx", hashHtml(status.registration?.relayResponse?.txHash)],
-          ["Block", assetHubBlockHtml(status.registration?.relayResponse?.blockNumber)]
+          ["Tx", registrationTxSummary(status.registration)],
+          ["Block", registrationBlockSummary(status.registration)]
         ])}
       </article>
 
@@ -426,7 +426,7 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["Acurast STD", boolLabel(status.runtime?.hasStd)],
           ["Secp256k1 signer", boolLabel(status.runtime?.hasStdSignersSecp256k1)],
           ["Network allowlist", boolLabel(status.runtime?.hasStdNetAddAllowedHostnames)],
-          ["App version", status.runtime?.appVersion]
+          ["App version", status.runtime?.appVersion ?? "unreported"]
         ])}
       </article>
     </section>
@@ -573,6 +573,22 @@ function assetHubBlockHtml(value: unknown): HtmlFragment | undefined {
   return externalLinkHtml(`https://assethub-polkadot.subscan.io/block/${encodeURIComponent(block)}`, block);
 }
 
+function registrationTxSummary(registration: Record<string, any> | undefined): unknown {
+  const tx = hashHtml(registration?.relayResponse?.txHash);
+  if (tx) {
+    return tx;
+  }
+  return registration?.state === "registered" ? "observed on-chain" : undefined;
+}
+
+function registrationBlockSummary(registration: Record<string, any> | undefined): unknown {
+  const block = assetHubBlockHtml(registration?.relayResponse?.blockNumber);
+  if (block) {
+    return block;
+  }
+  return registration?.state === "registered" ? "not reported" : undefined;
+}
+
 function blockSecondaryHtml(value: unknown): HtmlFragment | undefined {
   const block = assetHubBlockHtml(value);
   return block ? htmlFragment(`block ${block.__html}`) : undefined;
@@ -658,7 +674,14 @@ function dnsTargetSummary(value: unknown): unknown {
     return undefined;
   }
   const record = value as Record<string, unknown>;
+  const targetIps = Array.isArray(record.targetIps)
+    ? record.targetIps.map((item) => stringValue(item)).filter((item): item is string => Boolean(item))
+    : [];
+  if (targetIps.length > 0) {
+    return targetIps;
+  }
   return (
+    stringValue(record.targetIp) ??
     stringValue(record.target) ??
     stringValue(record.address) ??
     stringValue(record.acceptedIp) ??
@@ -678,7 +701,7 @@ function customerHostnamesSummary(value: unknown): unknown {
   }
   const hostnames = Array.isArray(record.hostnames) ? record.hostnames : [];
   if (hostnames.length === 0) {
-    return undefined;
+    return "none configured";
   }
   return hostnames
     .map((item) => {
@@ -696,6 +719,9 @@ function acmeRecordsSummary(value: unknown): unknown {
   const hostnames = Array.isArray((value as Record<string, unknown>).hostnames)
     ? ((value as Record<string, unknown>).hostnames as unknown[])
     : [];
+  if (hostnames.length === 0) {
+    return "not applicable";
+  }
   const records = hostnames.flatMap((item) => {
     const record = item as Record<string, any>;
     return [
@@ -703,7 +729,7 @@ function acmeRecordsSummary(value: unknown): unknown {
       record.certificateValidation?.dns01Challenge?.name
     ].filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
   });
-  return records.length > 0 ? records : undefined;
+  return records.length > 0 ? records : "none pending";
 }
 
 function validatorStateSummary(value: unknown): string | undefined {
@@ -725,7 +751,7 @@ function validatorStateSummary(value: unknown): string | undefined {
 
 function latestValidatorReportSummary(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
+    return "none yet";
   }
   const record = value as Record<string, unknown>;
   return [
@@ -737,7 +763,7 @@ function latestValidatorReportSummary(value: unknown): unknown {
 
 function validatorRowsSummary(value: unknown): unknown {
   if (!Array.isArray(value) || value.length === 0) {
-    return undefined;
+    return "none assigned yet";
   }
   return value.slice(0, 6).map((item) => {
     const record = item as Record<string, unknown>;

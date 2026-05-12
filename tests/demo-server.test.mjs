@@ -81,4 +81,175 @@ describe("Switchboard Express demo server", () => {
       await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
     }
   });
+
+  it("fetches gateway GeoIP once and reuses the cached result", async () => {
+    const originalFetch = globalThis.fetch;
+    let geoFetches = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = fetchUrl(input);
+      if (url.includes("/v1/deployment-intents/di_geo/observability")) {
+        return jsonResponse(observabilityPayload("203.0.113.8"));
+      }
+      if (url === "http://ip-api.com/json/203.0.113.8") {
+        geoFetches += 1;
+        return jsonResponse({
+          status: "success",
+          countryCode: "US",
+          country: "United States"
+        });
+      }
+      return originalFetch(input, init);
+    };
+    const demo = await startSwitchboardExpressDemo({ runtime: observabilityRuntime("di_geo"), port: 0 });
+    try {
+      const first = await waitForObservedStatus(demo.url, originalFetch);
+      const second = await originalFetch(new URL("/status", demo.url)).then((response) => response.json());
+
+      assert.equal(geoFetches, 1);
+      assert.deepEqual(first.gatewayGeoIp["203.0.113.8"], {
+        countryCode: "US",
+        country: "United States",
+        flag: "🇺🇸",
+        checkedAt: first.gatewayGeoIp["203.0.113.8"].checkedAt
+      });
+      assert.equal(second.gatewayGeoIp["203.0.113.8"].flag, "🇺🇸");
+    } finally {
+      globalThis.fetch = originalFetch;
+      await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+
+  it("keeps status valid when gateway GeoIP lookup fails", async () => {
+    const originalFetch = globalThis.fetch;
+    let geoFetches = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = fetchUrl(input);
+      if (url.includes("/v1/deployment-intents/di_geo_fail/observability")) {
+        return jsonResponse(observabilityPayload("203.0.113.9"));
+      }
+      if (url === "http://ip-api.com/json/203.0.113.9") {
+        geoFetches += 1;
+        return new Response(JSON.stringify({ status: "fail" }), {
+          status: 500,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return originalFetch(input, init);
+    };
+    const demo = await startSwitchboardExpressDemo({ runtime: observabilityRuntime("di_geo_fail"), port: 0 });
+    try {
+      const first = await waitForObservedStatus(demo.url, originalFetch);
+      const second = await originalFetch(new URL("/status", demo.url)).then((response) => response.json());
+
+      assert.equal(first.ok, true);
+      assert.equal(first.gatewayGeoIp, undefined);
+      assert.equal(second.gatewayGeoIp, undefined);
+      assert.equal(geoFetches, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+
+  it("does not report validation certificate SANs as customer hostnames", async () => {
+    const runtime = {
+      deploymentId: "57921",
+      async prepare() {
+        return { certificates: [] };
+      },
+      async log() {},
+      async reportReady() {},
+      configValue(name) {
+        return {
+          ENDPOINT_HOSTNAME: "demo.acurast.ingress.works",
+          SWITCHBOARD_CERTIFICATE_HOSTNAMES: "demo.acurast.ingress.works,switchboard-123-validation.ingress.digital"
+        }[name];
+      },
+      sessionId() {
+        return "session";
+      },
+      jobId() {
+        return "job";
+      }
+    };
+    const demo = await startSwitchboardExpressDemo({ runtime, port: 0 });
+    try {
+      const status = await fetch(new URL("/status", demo.url)).then((response) => response.json());
+
+      assert.deepEqual(status.public.customerHostnames, []);
+      assert.deepEqual(status.public.certificateHostnames, [
+        "demo.acurast.ingress.works",
+        "switchboard-123-validation.ingress.digital"
+      ]);
+    } finally {
+      await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
 });
+
+function observabilityRuntime(intentId) {
+  return {
+    deploymentId: "57921",
+    async prepare() {
+      return { certificates: [] };
+    },
+    async log() {},
+    async reportReady() {},
+    configValue(name) {
+      return {
+        SWITCHBOARD_RELAY_URL: "https://relay.example",
+        SWITCHBOARD_INTENT_ID: intentId,
+        SWITCHBOARD_INTENT_TOKEN: "token",
+        SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS: "60000"
+      }[name];
+    },
+    sessionId() {
+      return "session";
+    },
+    jobId() {
+      return "job";
+    }
+  };
+}
+
+function observabilityPayload(ip) {
+  return {
+    ok: true,
+    gateway: {
+      gatewayId: "switchboard-az-01",
+      capability: {
+        available: true,
+        publicAddresses: [ip]
+      }
+    }
+  };
+}
+
+async function waitForObservedStatus(baseUrl, fetchImpl) {
+  let latest;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    latest = await fetchImpl(new URL("/status", baseUrl)).then((response) => response.json());
+    if (latest.observability?.payload) {
+      return latest;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return latest;
+}
+
+function jsonResponse(payload) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+}
+
+function fetchUrl(input) {
+  if (input instanceof URL) {
+    return input.href;
+  }
+  if (typeof input === "string") {
+    return input;
+  }
+  return input.url;
+}

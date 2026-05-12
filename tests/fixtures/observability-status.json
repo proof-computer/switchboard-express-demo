@@ -1,113 +1,231 @@
 {
   "ok": true,
   "name": "Switchboard Express Demo",
-  "now": "2026-05-11T12:00:10.000Z",
-  "startedAt": "2026-05-11T12:00:00.000Z",
-  "uptimeSeconds": 10,
+  "now": "2026-05-12T16:24:51.456Z",
+  "startedAt": "2026-05-12T15:33:07.213Z",
+  "uptimeSeconds": 3104,
+  "local": {
+    "protocol": "https",
+    "host": "0.0.0.0",
+    "port": 3443,
+    "url": "https://0.0.0.0:3443/"
+  },
   "public": {
-    "hostname": "demo.switchboard.example",
-    "customerHostnames": ["app.example.com"],
-    "certificateHostnames": ["demo.switchboard.example", "app.example.com"],
-    "url": "https://demo.switchboard.example/",
-    "challengeUrl": "https://demo.switchboard.example/.well-known/proofcomputer/challenge?nonce=demo"
+    "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+    "customerHostnames": [],
+    "certificateHostnames": [
+      "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+      "switchboard-1778599587-validation.ingress.digital"
+    ],
+    "url": "https://e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works/",
+    "challengeUrl": "https://e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works/.well-known/proofcomputer/challenge?nonce=demo"
   },
   "ids": {
-    "deploymentId": "54098",
-    "sessionId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "jobId": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "jobSigner": "0x1000000000000000000000000000000000000001",
+    "deploymentId": "57921",
+    "sessionId": "0x494ebabad4bfe36d21e929aca0ca6869d9b0d4c5c117481c9ebec8d2d9778c09",
+    "jobId": "0xea2ad68c90e32bf6d0f02865fc8ad5835cc13ecc7775e0026eaea5d6e3290408",
+    "jobSigner": "0xF6c10FB29112D98Ff8dE6cDC1D2e3ef5E343c2b2",
     "signerMode": "acurast-secp256k1"
   },
   "routing": {
     "relayUrl": "https://control.switchboard.proof.computer",
     "relayHost": "control.switchboard.proof.computer",
-    "operatorId": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    "processorId": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "operatorId": "0x5c58c1d827db4fc0df06f17cc1e469b96dd86e17e3c2f19d8a7efec218028763",
+    "processorId": "0xb682629b05949018f9ecd5003c19fd270722da05f42da38ac000ed0a7fc93f20",
     "gatewayId": "switchboard-az-01",
     "registryAddress": "0x65d6B76BeC50F46D198fFa3598E381a298025Da0",
     "chainId": "420420419"
   },
   "registration": {
-    "state": "registered"
+    "state": "registered",
+    "relayResponse": {
+      "txHash": "0x1f81188a7b3b069c7e888897fb6b05c11d0a4df6c7731f7b5e170765e703cd33",
+      "blockNumber": 15668510,
+      "authorityLease": {
+        "name": "hub-registration-relayer",
+        "ownerId": "relay-a",
+        "acquiredAt": "2026-05-12T15:33:36.921Z",
+        "expiresAt": "2026-05-12T15:34:36.921Z"
+      }
+    }
   },
   "certificate": {
     "state": "active",
-    "hostnames": ["demo.switchboard.example", "app.example.com"],
+    "mode": "job-acme",
+    "hostnames": [
+      "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+      "switchboard-1778599587-validation.ingress.digital"
+    ],
     "certificates": [
       {
-        "hostname": "demo.switchboard.example",
+        "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
         "issuer": "ZeroSSL RSA DV SSL CA 2",
-        "notAfter": "2026-08-04T23:59:59.000Z"
+        "notAfter": "2026-08-10T23:59:59.000Z"
+      },
+      {
+        "hostname": "switchboard-1778599587-validation.ingress.digital",
+        "issuer": "ZeroSSL RSA DV SSL CA 2",
+        "notAfter": "2026-08-10T23:59:59.000Z"
       }
     ]
   },
   "challenges": {
-    "count": 2,
-    "lastAt": "2026-05-11T12:00:05.000Z"
+    "count": 8,
+    "lastAt": "2026-05-12T16:22:06.297Z",
+    "last": {
+      "nonceLength": 4,
+      "userAgent": "Mozilla/5.0 AppleWebKit/537.36",
+      "remoteAddress": "192.168.3.4"
+    }
   },
   "traffic": {
     "local": {
-      "startedAt": "2026-05-11T12:00:00.000Z",
-      "requestsTotal": 12,
-      "bytesReceivedTotal": 480,
-      "bytesSentTotal": 32768,
-      "lastRequestAt": "2026-05-11T12:00:09.000Z",
+      "startedAt": "2026-05-12T15:33:07.213Z",
+      "requestsTotal": 81,
+      "bytesReceivedTotal": 624,
+      "bytesSentTotal": 125902,
+      "lastRequestAt": "2026-05-12T16:22:06.305Z",
       "paths": [
         {
-          "path": "/",
-          "count": 6,
-          "bytesReceived": 240,
-          "bytesSent": 24576,
+          "path": "/health",
+          "count": 18,
+          "bytesReceived": 0,
+          "bytesSent": 198,
           "lastStatus": 200,
-          "lastAt": "2026-05-11T12:00:09.000Z"
+          "lastAt": "2026-05-12T16:04:59.235Z"
+        },
+        {
+          "path": "/.well-known/proofcomputer/challenge",
+          "count": 8,
+          "bytesReceived": 0,
+          "bytesSent": 1891,
+          "lastStatus": 200,
+          "lastAt": "2026-05-12T16:22:06.305Z"
+        },
+        {
+          "path": "/status",
+          "count": 7,
+          "bytesReceived": 0,
+          "bytesSent": 101668,
+          "lastStatus": 200,
+          "lastAt": "2026-05-12T15:55:59.993Z"
+        },
+        {
+          "path": "/",
+          "count": 1,
+          "bytesReceived": 0,
+          "bytesSent": 9,
+          "lastStatus": 200,
+          "lastAt": "2026-05-12T15:58:52.360Z"
+        }
+      ]
+    },
+    "relay": {
+      "source": "gateway-capability-report"
+    },
+    "routeMetrics": {
+      "available": true,
+      "source": "operator-capability-report",
+      "latestReportId": "gateway-capability-1778603069-380",
+      "previousReportId": "gateway-capability-1778603009-374",
+      "routes": [
+        {
+          "routeId": "switchboard-57921",
+          "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+          "statPrefix": "sni_e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+          "sampledAt": "2026-05-12T16:24:29.206Z",
+          "counters": {
+            "downstreamConnectionsTotal": "122",
+            "downstreamBytesReceivedTotal": "283221",
+            "downstreamBytesSentTotal": "3373827"
+          },
+          "delta": {
+            "downstreamConnectionsTotal": "0",
+            "downstreamBytesReceivedTotal": "0",
+            "downstreamBytesSentTotal": "0"
+          },
+          "deltaWindow": {
+            "from": "2026-05-12T16:23:29.203Z",
+            "to": "2026-05-12T16:24:29.206Z"
+          }
         }
       ]
     }
   },
   "observability": {
-    "checkedAt": "2026-05-11T12:00:10.000Z",
+    "checkedAt": "2026-05-12T16:24:41.311Z",
     "ok": true,
     "status": 200,
     "payload": {
       "ok": true,
-      "intentId": "di_demo",
-      "generatedAt": "2026-05-11T12:00:10.000Z",
+      "intentId": "di_wzt8hL99hZFVJ5ruEKjmoV0W",
+      "generatedAt": "2026-05-12T16:24:39.480Z",
       "gateway": {
-        "operatorId": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "operatorId": "0x5c58c1d827db4fc0df06f17cc1e469b96dd86e17e3c2f19d8a7efec218028763",
         "gatewayId": "switchboard-az-01",
-        "processorId": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "processorId": "0xb682629b05949018f9ecd5003c19fd270722da05f42da38ac000ed0a7fc93f20",
+        "allocation": {
+          "mode": "cli-selected-capability",
+          "managerId": "9470",
+          "publicAddresses": [
+            "195.22.134.245"
+          ]
+        },
         "capability": {
           "available": true,
           "latestReport": {
-            "reportId": "gateway-capability-1778500810-7",
-            "reportedAt": "2026-05-11T12:00:10.000Z"
+            "reportId": "gateway-capability-1778603069-380",
+            "reportedAt": "2026-05-12T16:24:29.212Z",
+            "receivedAt": "2026-05-12T16:24:29.242Z",
+            "expiresAt": "2026-05-12T16:27:29.212Z",
+            "signer": "5GbKtJGVVdSYJe3xehbxC22SiA9W8X3iDPbvBZMX3rbdCU4M"
           },
+          "operatorId": "0x5c58c1d827db4fc0df06f17cc1e469b96dd86e17e3c2f19d8a7efec218028763",
+          "gatewayId": "switchboard-az-01",
           "activeRouteCount": 1,
           "routeCapacity": 500,
-          "publicAddresses": ["198.51.100.10"],
+          "publicAddresses": [
+            "195.22.134.245"
+          ],
           "routeStateAvailable": true,
+          "routeState": {
+            "enabled": true,
+            "lastCheckedAt": "2026-05-12T16:24:26.451Z",
+            "lastAppliedAt": "2026-05-12T15:54:05.547Z",
+            "lastSuccessAt": "2026-05-12T16:24:26.549Z",
+            "lastCompletedAt": "2026-05-12T16:24:26.549Z",
+            "polledRouteCount": 1,
+            "desiredRouteCount": 1,
+            "configVersion": "380",
+            "consecutiveFailures": 0,
+            "watchdogAbortCount": 0,
+            "healthy": true,
+            "staleAfterMs": 15000
+          },
           "routeMetrics": {
             "available": true,
             "source": "operator-capability-report",
+            "latestReportId": "gateway-capability-1778603069-380",
+            "previousReportId": "gateway-capability-1778603009-374",
             "routes": [
               {
-                "routeId": "demo-route",
-                "hostname": "demo.switchboard.example",
-                "statPrefix": "sni_demo.switchboard.example",
-                "sampledAt": "2026-05-11T12:00:10.000Z",
+                "routeId": "switchboard-57921",
+                "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+                "statPrefix": "sni_e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+                "sampledAt": "2026-05-12T16:24:29.206Z",
                 "counters": {
-                  "downstreamConnectionsTotal": "21",
-                  "downstreamBytesReceivedTotal": "16384",
-                  "downstreamBytesSentTotal": "65536"
+                  "downstreamConnectionsTotal": "122",
+                  "downstreamBytesReceivedTotal": "283221",
+                  "downstreamBytesSentTotal": "3373827"
                 },
                 "delta": {
-                  "downstreamConnectionsTotal": "3",
-                  "downstreamBytesReceivedTotal": "2048",
-                  "downstreamBytesSentTotal": "8192"
+                  "downstreamConnectionsTotal": "0",
+                  "downstreamBytesReceivedTotal": "0",
+                  "downstreamBytesSentTotal": "0"
                 },
                 "deltaWindow": {
-                  "from": "2026-05-11T12:00:00.000Z",
-                  "to": "2026-05-11T12:00:10.000Z"
+                  "from": "2026-05-12T16:23:29.203Z",
+                  "to": "2026-05-12T16:24:29.206Z"
                 }
               }
             ]
@@ -117,81 +235,236 @@
       "dns": {
         "available": true,
         "canonical": {
-          "hostname": "demo.switchboard.example",
+          "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
           "materialization": {
+            "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+            "targetIp": "195.22.134.245",
+            "targetIps": [
+              "195.22.134.245"
+            ],
+            "zoneName": "ingress.works",
             "status": "propagated",
-            "target": "198.51.100.10"
+            "attempts": 2,
+            "createdAt": "2026-05-12T15:33:09.534Z",
+            "updatedAt": "2026-05-12T15:33:17.121Z",
+            "expiresAt": "2026-05-13T15:26:27.893Z",
+            "resolvers": {
+              "1.1.1.1": [
+                "195.22.134.245"
+              ],
+              "8.8.8.8": [
+                "195.22.134.245"
+              ]
+            },
+            "propagatedAt": "2026-05-12T15:33:17.121Z"
           }
         },
         "customerHostnames": {
           "available": true,
-          "count": 1,
-          "hostnames": [
-            {
-              "customerHostname": "app.example.com",
-              "status": "dns_validated",
-              "certificateValidation": {
-                "instructions": {
-                  "summary": "Create CNAME _acme-challenge.app.example.com -> _acme-challenge.demo.switchboard.example"
-                }
-              }
-            }
-          ]
+          "count": 0,
+          "hostnames": []
         }
+      },
+      "traffic": {
+        "source": "gateway-capability-report"
       },
       "routeMetrics": {
         "available": true,
         "source": "operator-capability-report",
+        "latestReportId": "gateway-capability-1778603069-380",
+        "previousReportId": "gateway-capability-1778603009-374",
         "routes": [
           {
-            "routeId": "demo-route",
-            "hostname": "demo.switchboard.example",
-            "statPrefix": "sni_demo.switchboard.example",
-            "sampledAt": "2026-05-11T12:00:10.000Z",
+            "routeId": "switchboard-57921",
+            "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+            "statPrefix": "sni_e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+            "sampledAt": "2026-05-12T16:24:29.206Z",
             "counters": {
-              "downstreamConnectionsTotal": "21",
-              "downstreamBytesReceivedTotal": "16384",
-              "downstreamBytesSentTotal": "65536"
+              "downstreamConnectionsTotal": "122",
+              "downstreamBytesReceivedTotal": "283221",
+              "downstreamBytesSentTotal": "3373827"
+            },
+            "delta": {
+              "downstreamConnectionsTotal": "0",
+              "downstreamBytesReceivedTotal": "0",
+              "downstreamBytesSentTotal": "0"
+            },
+            "deltaWindow": {
+              "from": "2026-05-12T16:23:29.203Z",
+              "to": "2026-05-12T16:24:29.206Z"
             }
           }
         ]
       },
+      "routeState": {
+        "desired": true,
+        "routeId": "switchboard-57921",
+        "sessionId": "0x494ebabad4bfe36d21e929aca0ca6869d9b0d4c5c117481c9ebec8d2d9778c09",
+        "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+        "expiresAt": 1778606628,
+        "gatewayId": "switchboard-az-01",
+        "matchesSelectedGateway": true,
+        "runtimeHttpsReady": true
+      },
       "validators": {
         "available": true,
+        "generatedAt": "2026-05-12T16:24:39.518Z",
         "counts": {
           "work": 1,
           "enabledWork": 1,
           "reports": 3,
           "successes": 3,
           "failures": 0,
-          "validators": 2
+          "validators": 1
         },
         "latestReport": {
-          "reportId": "validation-demo-3",
-          "checkedAt": "2026-05-11T12:00:09.000Z",
+          "receivedAt": "2026-05-12T15:55:58.321Z",
+          "signer": "5EFKziSPzN2gzumt5LtLnW5WxAho1mLFtWpYS5GcqUexNHoz",
+          "reportId": "route-validation-1778601358-fb6cf3a7",
+          "checkedAt": "2026-05-12T15:55:58.436Z",
+          "sessionId": "0x494ebabad4bfe36d21e929aca0ca6869d9b0d4c5c117481c9ebec8d2d9778c09",
+          "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
           "success": true
         },
         "validators": [
           {
-            "validatorId": "validator-a",
+            "validatorId": "acurast-validator-57930",
+            "deploymentId": "57930",
+            "deviceAddress": "5G5dzwvJPDvNx36yHroPBdPiCemQq4EHniGr5a6rPqK3JaNX",
+            "runtimeSigner": "5EFKziSPzN2gzumt5LtLnW5WxAho1mLFtWpYS5GcqUexNHoz",
+            "assignedWorkCount": 1,
             "status": "healthy",
-            "latestReportAt": "2026-05-11T12:00:09.000Z"
-          },
+            "reportCount": 1,
+            "latestReportId": "route-validation-1778601358-fb6cf3a7",
+            "latestReportAt": "2026-05-12T15:55:58.436Z",
+            "latestSuccess": true
+          }
+        ],
+        "work": [
           {
-            "validatorId": "validator-b",
-            "status": "healthy",
-            "latestReportAt": "2026-05-11T12:00:04.000Z"
+            "workId": "live-20260512T150758Z-canary-validator-1",
+            "sessionId": "0x494ebabad4bfe36d21e929aca0ca6869d9b0d4c5c117481c9ebec8d2d9778c09",
+            "hostname": "e-q6jmxmk5r2tpyysf2rqs.acurast.ingress.works",
+            "mode": "route_open",
+            "intervalSeconds": 60,
+            "enabled": true,
+            "lastReportId": "route-validation-1778601358-fb6cf3a7",
+            "lastReportAt": "2026-05-12T15:55:58.436Z",
+            "lastSuccess": true,
+            "consecutiveFailures": 0
           }
         ]
+      },
+      "availability": {
+        "status": "ready",
+        "runtimeHttps": {
+          "ready": true,
+          "protocol": "https",
+          "port": 3443,
+          "firstReadyAt": "2026-05-12T15:34:28.867Z",
+          "lastReadyAt": "2026-05-12T15:34:28.867Z"
+        },
+        "funding": {
+          "status": "funded",
+          "checkedAt": "2026-05-12T15:54:01.296Z",
+          "sessionId": "0x494ebabad4bfe36d21e929aca0ca6869d9b0d4c5c117481c9ebec8d2d9778c09"
+        },
+        "route": {
+          "status": "active",
+          "routeId": "switchboard-57921",
+          "updatedAt": "2026-05-12T15:34:30.361Z",
+          "sink": {
+            "mode": "gateway-route-state",
+            "gatewayId": "switchboard-az-01"
+          }
+        }
       }
     }
+  },
+  "gatewayGeoIp": {
+    "195.22.134.245": {
+      "countryCode": "GB",
+      "country": "United Kingdom",
+      "flag": "🇬🇧",
+      "checkedAt": "2026-05-12T16:24:51.456Z"
+    }
+  },
+  "acurast": {
+    "deploymentId": "57921",
+    "rawDeploymentId": "{\"origin\":{\"kind\":\"Acurast\",\"source\":\"5cd81f74fbd78efad9568d2f0136ac2dc01f0f2d4ec0c9061277a3147cc7e031\"},\"id\":\"57921\"}",
+    "deviceAddress": "5GC1Jd9RJUkX1ppYAEXyV1WD1J6x6MHaWZDbX4fiqczuvJry",
+    "hasStd": true
+  },
+  "relayDiagnostics": {
+    "relayHost": "control.switchboard.proof.computer",
+    "relayProtocol": "https:",
+    "healthUrl": "https://control.switchboard.proof.computer/health",
+    "dns": {
+      "ok": true,
+      "addresses": [
+        {
+          "address": "2a09:8280:1::114:6d6a:0",
+          "family": 6
+        },
+        {
+          "address": "66.241.125.160",
+          "family": 4
+        }
+      ]
+    },
+    "health": {
+      "ok": true,
+      "status": 200,
+      "statusText": "OK",
+      "elapsedMs": 65,
+      "bodyPreview": "{\"ok\":true,\"chainId\":\"420420419\",\"registryAddress\":\"0x65d6B76BeC50F46D198fFa3598E381a298025Da0\"}"
+    },
+    "checkedAt": "2026-05-12T15:34:30.783Z"
   },
   "runtime": {
     "nodeVersion": "v24.5.0",
     "platform": "android",
     "arch": "arm64",
-    "hasStd": true
+    "pid": 7086,
+    "uptimeSeconds": 3105,
+    "hasStd": true,
+    "hasStdEnv": true,
+    "hasStdJobGetId": true,
+    "hasStdJobGetProcessorId": false,
+    "hasStdJobGetPublicKeys": true,
+    "hasStdDeviceGetAddress": true,
+    "hasStdSignersSecp256k1": true,
+    "hasStdNetAddAllowedHostnames": false,
+    "appVersion": "0.1.5"
   },
-  "network": {},
-  "envPresence": {}
+  "network": {
+    "publicIpv4": [
+      "192.168.3.66"
+    ]
+  },
+  "envPresence": {
+    "RELAY_URL": true,
+    "CHAIN_ID": true,
+    "INGRESS_REGISTRY_ADDRESS": true,
+    "SESSION_ID": true,
+    "JOB_ID": true,
+    "OPERATOR_ID": true,
+    "PROCESSOR_ID": true,
+    "ENDPOINT_HOSTNAME": true,
+    "GATEWAY_ID": true,
+    "JOB_SIGNER_PRIVATE_KEY": false,
+    "SWITCHBOARD_CONFIG": true,
+    "SWITCHBOARD_RELAY_URL": true,
+    "SWITCHBOARD_INTENT_ID": true,
+    "SWITCHBOARD_INTENT_GROUP_ID": false,
+    "SWITCHBOARD_INTENT_TOKEN": true,
+    "SWITCHBOARD_OBSERVABILITY": false,
+    "SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS": false,
+    "SWITCHBOARD_OBSERVABILITY_TIMEOUT_MS": false,
+    "SWITCHBOARD_LOG_URL": false,
+    "SWITCHBOARD_LOG_TOKEN": false,
+    "SWITCHBOARD_LOG_ENCRYPTION_KEY": false,
+    "SWITCHBOARD_RELAY_DIAGNOSTICS": true,
+    "SWITCHBOARD_RELAY_DIAGNOSTICS_TIMEOUT_MS": true
+  }
 }

@@ -8,6 +8,86 @@ interface DeploymentInfo {
   kind?: string;
 }
 
+interface TimeRenderOptions {
+  nowMs?: number;
+  mode?: "relative" | "expires";
+}
+
+const FIELD_HELP: Record<string, string> = {
+  "TLS Certificate": "Certificate authority and expiry state for the route TLS certificate.",
+  "Hub Registration": "Polkadot Hub registration state for this Switchboard route.",
+  "Acurast Runtime": "Runtime environment reported by the Acurast job.",
+  "Route Traffic": "Gateway traffic counters for the public route.",
+  Endpoint: "Canonical public URL served by this Switchboard route.",
+  Challenge: "Public challenge endpoint used to prove the job is reachable.",
+  Relay: "Switchboard relay/control-plane endpoint used by this demo job.",
+  "Gateway ID": "Gateway selected to publish and serve this route.",
+  "Relay DNS": "DNS lookup result for the relay/control-plane hostname.",
+  "Relay health": "Relay health probe result from the demo job.",
+  Operator: "Operator identity associated with the selected gateway.",
+  Processor: "Acurast processor identity backing the selected gateway.",
+  "Capability report": "Latest signed gateway capability report identifier.",
+  "Route state": "Whether the gateway can poll and apply route state.",
+  "Active routes": "Number of active routes currently reported by the gateway.",
+  Capacity: "Total route capacity reported by the gateway.",
+  "Public addresses": "Public IP addresses advertised by the gateway.",
+  "Canonical hostname": "Canonical hostname served by this Switchboard route.",
+  "Canonical DNS": "DNS materialization state for the canonical hostname.",
+  "DNS target": "Gateway IP target currently published in DNS.",
+  "Customer hostnames": "Developer-owned CNAME hostnames attached to this endpoint.",
+  "ACME records": "DNS records needed for customer-hostname certificate validation.",
+  "Local requests": "Requests observed directly by the demo application.",
+  "Local sent": "Response bytes sent by the demo application.",
+  "Local received": "Request bytes received by the demo application.",
+  "Gateway connections": "Connections observed by the selected gateway for this route.",
+  "Gateway received": "Request bytes observed by the selected gateway.",
+  "Gateway sent": "Response bytes observed by the selected gateway.",
+  "Metric source": "Source that produced the gateway route metrics.",
+  Sampled: "When the gateway route metrics were sampled.",
+  Deployment: "Acurast deployment associated with this demo job.",
+  Job: "Acurast job identifier reported by the runtime.",
+  "Job signer": "Job signing address used for Switchboard job proofs.",
+  "Signer mode": "Signing backend used by the demo job.",
+  Runtime: "Runtime platform and Node.js version reported by the job.",
+  Started: "When the demo job process started.",
+  Uptime: "How long the demo job process has been running.",
+  "Chain ID": "Polkadot Hub chain identifier configured for settlement.",
+  Registry: "Switchboard registry contract address configured for this route.",
+  Session: "Switchboard session identifier associated with the route.",
+  Registration: "Registration state and relay response for this route.",
+  Tx: "Hub transaction hash or observation status for registration.",
+  Block: "Hub block associated with the registration transaction.",
+  State: "Current state reported for this section.",
+  Hostname: "Primary hostname covered by the certificate.",
+  Issuer: "Certificate authority that issued the active TLS certificate.",
+  Expires: "Expiry time for the active TLS certificate.",
+  Hostnames: "All hostnames requested or covered by the certificate state.",
+  Count: "Number of challenge endpoint hits seen by the demo app.",
+  "Last at": "Most recent challenge endpoint hit time.",
+  "Nonce length": "Length of the last challenge nonce received.",
+  "User agent": "User agent from the last challenge request.",
+  "Remote address": "Remote address from the last challenge request.",
+  "Assigned validators": "Number of validators assigned to observe this route.",
+  "Work packages": "Validator work packages configured for this route.",
+  "Recent reports": "Recent validator reports available for this route.",
+  Successes: "Recent successful validator reports.",
+  Failures: "Recent failed validator reports.",
+  "Latest report": "Newest validator report summary.",
+  Validators: "Validator identities and latest health signals.",
+  Node: "Node.js runtime version running the demo app.",
+  Platform: "Operating-system platform and CPU architecture.",
+  "Acurast STD": "Whether the Acurast runtime standard library is present.",
+  "Secp256k1 signer": "Whether the Acurast secp256k1 signer is available.",
+  "Network allowlist": "Whether the Acurast network allowlist API is available.",
+  "App version": "Version of the demo package reported by the runtime.",
+  Certificate: "Certificate status payload reported by the demo app.",
+  Traffic: "Local and gateway traffic payloads reported by the demo app.",
+  Observability: "Relay observability payload cached by the demo app.",
+  "Relay diagnostics": "Relay DNS and health diagnostics collected by the demo app.",
+  Network: "Local network address summary from the demo runtime.",
+  "Environment presence": "Boolean summary of relevant environment variables."
+};
+
 export function renderDemoPage(status: Record<string, any>): string {
   const publicUrl = stringValue(status.public?.url);
   const publicHostname = stringValue(status.public?.hostname);
@@ -25,6 +105,9 @@ export function renderDemoPage(status: Record<string, any>): string {
   const localTraffic = status.traffic?.local;
   const validatorSummary = observability?.validators;
   const dns = observability?.dns;
+  const nowMs = timestampMs(status.now) ?? Date.now();
+  const gatewayGeoIp = geoIpPayload(status.gatewayGeoIp);
+  const certificateHostnames = certificateHostnamesSummary(status);
 
   return `<!doctype html>
 <html lang="en">
@@ -168,6 +251,62 @@ export function renderDemoPage(status: Record<string, any>): string {
       text-transform: uppercase;
       letter-spacing: 0;
     }
+    .field-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      max-width: 100%;
+    }
+    .field-help-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 13px;
+      height: 13px;
+      flex: 0 0 auto;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--stone);
+      font: inherit;
+      font-size: 10px;
+      line-height: 1;
+      text-transform: none;
+      cursor: default;
+    }
+    .field-help-icon:hover, .field-help-icon:focus-visible { color: var(--steel); }
+    .field-help-icon:focus-visible {
+      outline: 2px solid rgba(14, 124, 255, 0.45);
+      outline-offset: 2px;
+      border-radius: 999px;
+    }
+    .field-tooltip {
+      position: absolute;
+      z-index: 1000;
+      max-width: min(280px, calc(100vw - 24px));
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: var(--ink);
+      color: #fff;
+      box-shadow: 0 10px 28px rgba(14, 18, 24, 0.18);
+      font: 12px/1.35 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      text-transform: none;
+      letter-spacing: 0;
+      pointer-events: none;
+    }
+    .field-tooltip[data-hidden="true"] { display: none; }
+    .line-list {
+      display: grid;
+      gap: 3px;
+    }
+    .line-list-item {
+      display: block;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .country-flag {
+      margin-left: 4px;
+    }
     .value {
       display: block;
       margin-top: 5px;
@@ -299,10 +438,10 @@ export function renderDemoPage(status: Record<string, any>): string {
     </header>
 
     <section class="summary">
-      ${metricHtml("TLS Certificate", certificate?.issuer ?? status.certificate?.state, certificate?.notAfter ? `expires ${formatDateTime(certificate.notAfter)}` : undefined)}
+      ${metricHtml("TLS Certificate", certificate?.issuer ?? status.certificate?.state, certificate?.notAfter ? formatDateTime(certificate.notAfter, { nowMs, mode: "expires" }) : undefined)}
       ${metricHtml("Hub Registration", registration?.relayResponse?.txHash ? shortValue(registration.relayResponse.txHash) : registration?.state, blockSecondaryHtml(registration?.relayResponse?.blockNumber))}
       ${metricHtml("Acurast Runtime", runtimeLabel(status), deploymentLink)}
-      ${metricHtml("Route Traffic", formatBytes(counterValue(firstRouteMetric, "downstreamBytesSentTotal")), routeMetricDeltaHtml(firstRouteMetric, "downstreamBytesSentTotal"))}
+      ${metricHtml("Route Traffic", formatBytes(counterValue(firstRouteMetric, "downstreamBytesSentTotal")))}
     </section>
 
     <section class="grid">
@@ -328,7 +467,7 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["Route state", boolLabel(observability?.gateway?.capability?.routeStateAvailable)],
           ["Active routes", observability?.gateway?.capability?.activeRouteCount],
           ["Capacity", observability?.gateway?.capability?.routeCapacity],
-          ["Public addresses", observability?.gateway?.capability?.publicAddresses]
+          ["Public addresses", publicAddressesSummary(observability?.gateway?.capability?.publicAddresses, gatewayGeoIp)]
         ])}
       </article>
 
@@ -353,7 +492,7 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["Gateway received", formatBytes(counterValue(firstRouteMetric, "downstreamBytesReceivedTotal"))],
           ["Gateway sent", formatBytes(counterValue(firstRouteMetric, "downstreamBytesSentTotal"))],
           ["Metric source", routeMetrics?.source],
-          ["Sampled", formatDateTime(firstRouteMetric?.sampledAt)]
+          ["Sampled", formatDateTime(firstRouteMetric?.sampledAt, { nowMs })]
         ])}
       </article>
 
@@ -365,7 +504,7 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["Job signer", hashHtml(status.ids?.jobSigner)],
           ["Signer mode", status.ids?.signerMode],
           ["Runtime", runtimeLabel(status)],
-          ["Started", formatDateTime(status.startedAt)],
+          ["Started", formatDateTime(status.startedAt, { nowMs })],
           ["Uptime", formatDuration(Number(status.uptimeSeconds ?? 0))]
         ])}
       </article>
@@ -388,8 +527,8 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["State", status.certificate?.state],
           ["Hostname", certificate?.hostname ?? status.public?.hostname],
           ["Issuer", certificate?.issuer],
-          ["Expires", formatDateTime(certificate?.notAfter)],
-          ["Hostnames", status.certificate?.hostnames]
+          ["Expires", formatDateTime(certificate?.notAfter, { nowMs })],
+          ["Hostnames", certificateHostnames]
         ])}
       </article>
 
@@ -397,7 +536,7 @@ export function renderDemoPage(status: Record<string, any>): string {
         <h2>Challenges</h2>
         ${tableHtml([
           ["Count", status.challenges?.count],
-          ["Last at", formatDateTime(status.challenges?.lastAt)],
+          ["Last at", formatDateTime(status.challenges?.lastAt, { nowMs })],
           ["Nonce length", status.challenges?.last?.nonceLength],
           ["User agent", status.challenges?.last?.userAgent],
           ["Remote address", status.challenges?.last?.remoteAddress]
@@ -413,8 +552,8 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["Recent reports", validatorSummary?.counts?.reports],
           ["Successes", validatorSummary?.counts?.successes],
           ["Failures", validatorSummary?.counts?.failures],
-          ["Latest report", latestValidatorReportSummary(validatorSummary?.latestReport)],
-          ["Validators", validatorRowsSummary(validatorSummary?.validators)]
+          ["Latest report", latestValidatorReportSummary(validatorSummary, nowMs)],
+          ["Validators", validatorRowsSummary(validatorSummary, nowMs)]
         ])}
       </article>
 
@@ -444,19 +583,80 @@ export function renderDemoPage(status: Record<string, any>): string {
       ])}
     </details>
   </div>
+  <script type="module">
+    import { autoUpdate, computePosition, flip, offset, shift } from "https://cdn.jsdelivr.net/npm/@floating-ui/dom@1.7.4/+esm";
+
+    const tooltip = document.createElement("div");
+    tooltip.className = "field-tooltip";
+    tooltip.id = "field-help-tooltip";
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.dataset.hidden = "true";
+    document.body.appendChild(tooltip);
+
+    let activeAnchor;
+    let cleanup;
+
+    function showTooltip(anchor) {
+      const text = anchor.dataset.tooltip;
+      if (!text) return;
+      activeAnchor = anchor;
+      tooltip.textContent = text;
+      tooltip.dataset.hidden = "false";
+      anchor.setAttribute("aria-describedby", tooltip.id);
+      cleanup?.();
+      cleanup = autoUpdate(anchor, tooltip, () => {
+        computePosition(anchor, tooltip, {
+          placement: "top",
+          middleware: [offset(8), flip(), shift({ padding: 8 })]
+        }).then(({ x, y }) => {
+          Object.assign(tooltip.style, {
+            left: x + "px",
+            top: y + "px"
+          });
+        });
+      });
+    }
+
+    function hideTooltip(anchor) {
+      if (anchor && activeAnchor && anchor !== activeAnchor) return;
+      cleanup?.();
+      cleanup = undefined;
+      activeAnchor?.removeAttribute("aria-describedby");
+      activeAnchor = undefined;
+      tooltip.dataset.hidden = "true";
+    }
+
+    document.querySelectorAll("[data-tooltip]").forEach((anchor) => {
+      anchor.addEventListener("mouseenter", () => showTooltip(anchor));
+      anchor.addEventListener("focus", () => showTooltip(anchor));
+      anchor.addEventListener("mouseleave", () => hideTooltip(anchor));
+      anchor.addEventListener("blur", () => hideTooltip(anchor));
+      anchor.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") hideTooltip(anchor);
+      });
+    });
+  </script>
 </body>
 </html>`;
 }
 
 function metricHtml(label: string, value: unknown, secondary?: unknown): string {
   const secondaryHtml = secondary === undefined || secondary === null || secondary === "" ? "" : `<span class="value-secondary">${renderValue(secondary)}</span>`;
-  return `<div class="metric"><span class="label">${escapeHtml(label)}</span><span class="value">${renderValue(value)}</span>${secondaryHtml}</div>`;
+  return `<div class="metric"><span class="label">${fieldLabelHtml(label)}</span><span class="value">${renderValue(value)}</span>${secondaryHtml}</div>`;
 }
 
 function tableHtml(rows: Array<[string, unknown]>): string {
   return `<table><tbody>${rows
-    .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${renderValue(value)}</td></tr>`)
+    .map(([label, value]) => `<tr><th>${fieldLabelHtml(label)}</th><td>${renderValue(value)}</td></tr>`)
     .join("")}</tbody></table>`;
+}
+
+function fieldLabelHtml(label: string): string {
+  const help = FIELD_HELP[label];
+  if (!help) {
+    return escapeHtml(label);
+  }
+  return `<span class="field-label"><button type="button" class="field-help-icon" data-tooltip="${escapeHtml(help)}" aria-label="${escapeHtml(`${label}: ${help}`)}">ⓘ</button><span>${escapeHtml(label)}</span></span>`;
 }
 
 function linkHtml(href: string, label: string, title = href): HtmlFragment {
@@ -473,6 +673,14 @@ function externalLinkHtml(href: string, label: string, title = href): HtmlFragme
 
 function htmlFragment(html: string): HtmlFragment {
   return { __html: html };
+}
+
+function lineListHtml(values: unknown[]): HtmlFragment | undefined {
+  const items = values.map((value) => inlineHtml(value)).filter((value): value is string => Boolean(value));
+  if (items.length === 0) {
+    return undefined;
+  }
+  return htmlFragment(`<span class="line-list">${items.map((item) => `<span class="line-list-item">${item}</span>`).join("")}</span>`);
 }
 
 function hashHtml(value: unknown): unknown {
@@ -524,6 +732,22 @@ function isHtmlFragment(value: unknown): value is HtmlFragment {
 function primaryCertificate(status: Record<string, any>): Record<string, any> | undefined {
   const certificate = status.certificate?.certificates?.[0];
   return certificate && typeof certificate === "object" ? certificate : undefined;
+}
+
+function certificateHostnamesSummary(status: Record<string, any>): string[] | undefined {
+  const candidates = Array.isArray(status.certificate?.hostnames)
+    ? status.certificate.hostnames
+    : Array.isArray(status.public?.certificateHostnames)
+      ? status.public.certificateHostnames
+      : [];
+  const hostnames = uniqueStrings(candidates)
+    .map((hostname) => hostname.toLowerCase())
+    .filter((hostname) => !looksLikeValidationHostname(hostname));
+  return hostnames.length > 0 ? hostnames : undefined;
+}
+
+function looksLikeValidationHostname(hostname: string): boolean {
+  return hostname.includes("-validation.") || hostname.startsWith("validation.");
 }
 
 function runtimeLabel(status: Record<string, any>): string {
@@ -602,19 +826,18 @@ function optionalRow(label: string, value: unknown): Array<[string, unknown]> {
   return value === undefined || value === null || value === "" ? [] : [[label, value]];
 }
 
-function formatAddressList(addresses: unknown): string | undefined {
+function formatAddressList(addresses: unknown): HtmlFragment | undefined {
   if (!Array.isArray(addresses) || addresses.length === 0) {
     return undefined;
   }
-  return addresses
+  return lineListHtml(addresses
     .map((item) => {
       const record = item as Record<string, unknown>;
       const address = stringValue(record.address);
       const family = record.family ? `IPv${record.family}` : undefined;
       return [address, family].filter(Boolean).join(" ");
     })
-    .filter(Boolean)
-    .join(", ");
+    .filter(Boolean));
 }
 
 function observabilityPayload(status: Record<string, any>): Record<string, any> | undefined {
@@ -637,15 +860,33 @@ function counterValue(metric: Record<string, any> | undefined, key: string): str
   return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
 }
 
-function routeMetricDeltaHtml(metric: Record<string, any> | undefined, key: string): HtmlFragment | undefined {
-  const delta = metric?.delta?.[key];
-  if (delta === undefined || delta === null || delta === "") {
+function publicAddressesSummary(addresses: unknown, geoIp: Record<string, Record<string, unknown>>): unknown {
+  if (!Array.isArray(addresses) || addresses.length === 0) {
     return undefined;
   }
-  const formatted = key.toLowerCase().includes("bytes") ? formatBytes(delta) : String(delta);
-  const from = formatDateTime(metric?.deltaWindow?.from);
-  const to = formatDateTime(metric?.deltaWindow?.to);
-  return htmlFragment(`+${escapeHtml(formatted ?? String(delta))}${from && to ? ` from ${escapeHtml(from)} to ${escapeHtml(to)}` : ""}`);
+  return addresses
+    .map((item) => {
+      const ip = stringValue(item);
+      if (!ip) {
+        return undefined;
+      }
+      const geo = geoIp[ip];
+      const flag = stringValue(geo?.flag);
+      if (!flag) {
+        return ip;
+      }
+      const country = [stringValue(geo?.country), stringValue(geo?.countryCode)].filter(Boolean).join(" ");
+      const title = country || ip;
+      return htmlFragment(`<span class="public-address" title="${escapeHtml(title)}">${escapeHtml(ip)}<span class="country-flag">${escapeHtml(flag)}</span></span>`);
+    })
+    .filter(Boolean);
+}
+
+function geoIpPayload(value: unknown): Record<string, Record<string, unknown>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, Record<string, unknown>>;
 }
 
 function formatBytes(value: unknown): string | undefined {
@@ -736,9 +977,20 @@ function validatorStateSummary(value: unknown): string | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
-  const validators = (value as Record<string, unknown>).validators;
+  const record = value as Record<string, unknown>;
+  if (record.available === false) {
+    return stringValue(record.reason) ?? "validator status unavailable";
+  }
+  const counts = validatorCounts(record);
+  const validators = record.validators;
   if (!Array.isArray(validators) || validators.length === 0) {
-    return "unknown";
+    if ((counts.enabledWork ?? counts.work ?? 0) > 0) {
+      return "validator launch pending";
+    }
+    if ((counts.work ?? 0) === 0) {
+      return "not scheduled";
+    }
+    return "no validator signal yet";
   }
   if (validators.some((item) => (item as Record<string, unknown>).status === "unhealthy")) {
     return "unhealthy";
@@ -746,36 +998,78 @@ function validatorStateSummary(value: unknown): string | undefined {
   if (validators.some((item) => (item as Record<string, unknown>).status === "healthy")) {
     return "healthy";
   }
-  return "unknown";
+  if ((counts.reports ?? 0) === 0) {
+    return "awaiting first report";
+  }
+  return "no validator signal yet";
 }
 
-function latestValidatorReportSummary(value: unknown): unknown {
+function latestValidatorReportSummary(value: unknown, nowMs: number): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const summary = value as Record<string, unknown>;
+  const latestReport = summary.latestReport;
+  if (!latestReport || typeof latestReport !== "object" || Array.isArray(latestReport)) {
+    const counts = validatorCounts(summary);
+    if ((counts.enabledWork ?? counts.work ?? 0) > 0) {
+      return "awaiting first report";
+    }
+    if ((counts.work ?? 0) === 0) {
+      return "not scheduled";
+    }
     return "none yet";
   }
-  const record = value as Record<string, unknown>;
-  return [
-    stringValue(record.reportId),
-    record.success === true ? "healthy" : record.success === false ? "unhealthy" : undefined,
-    formatDateTime(record.checkedAt)
-  ].filter(Boolean).join(" ");
+  const record = latestReport as Record<string, unknown>;
+  return htmlFragment([
+    inlineHtml(stringValue(record.reportId)),
+    inlineHtml(record.success === true ? "healthy" : record.success === false ? "unhealthy" : undefined),
+    inlineHtml(formatDateTime(record.checkedAt, { nowMs }))
+  ].filter(Boolean).join(" "));
 }
 
-function validatorRowsSummary(value: unknown): unknown {
-  if (!Array.isArray(value) || value.length === 0) {
+function validatorRowsSummary(value: unknown, nowMs: number): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const summary = value as Record<string, unknown>;
+  const validators = summary.validators;
+  if (!Array.isArray(validators) || validators.length === 0) {
+    const counts = validatorCounts(summary);
+    if ((counts.enabledWork ?? counts.work ?? 0) > 0) {
+      return "validator launch pending";
+    }
+    if ((counts.work ?? 0) === 0) {
+      return "not scheduled";
+    }
     return "none assigned yet";
   }
-  return value.slice(0, 6).map((item) => {
+  const rows = validators.slice(0, 6).map((item) => {
     const record = item as Record<string, unknown>;
-    return [
-      stringValue(record.validatorId),
-      stringValue(record.status),
-      formatDateTime(record.latestReportAt)
-    ].filter(Boolean).join(" ");
+    return htmlFragment([
+      inlineHtml(stringValue(record.validatorId)),
+      inlineHtml(stringValue(record.status)),
+      inlineHtml(formatDateTime(record.latestReportAt, { nowMs }))
+    ].filter(Boolean).join(" "));
   });
+  return lineListHtml(rows);
 }
 
-function formatDateTime(value: unknown): string | undefined {
+function validatorCounts(summary: Record<string, unknown>): Record<string, number | undefined> {
+  const counts = summary.counts && typeof summary.counts === "object" && !Array.isArray(summary.counts)
+    ? summary.counts as Record<string, unknown>
+    : {};
+  return {
+    work: numberValue(counts.work),
+    enabledWork: numberValue(counts.enabledWork),
+    reports: numberValue(counts.reports),
+    successes: numberValue(counts.successes),
+    failures: numberValue(counts.failures),
+    validators: numberValue(counts.validators)
+  };
+}
+
+function formatDateTime(value: unknown, options: TimeRenderOptions = {}): HtmlFragment | string | undefined {
   const text = stringValue(value);
   if (!text) {
     return undefined;
@@ -784,15 +1078,83 @@ function formatDateTime(value: unknown): string | undefined {
   if (Number.isNaN(date.getTime())) {
     return text;
   }
-  return date.toISOString().replace("T", " ").replace(".000Z", " UTC").replace("Z", " UTC");
+  const iso = date.toISOString();
+  const nowMs = options.nowMs ?? Date.now();
+  const label = relativeTimeLabel(date.getTime() - nowMs, options.mode ?? "relative");
+  return htmlFragment(`<time datetime="${escapeHtml(iso)}" title="${escapeHtml(iso)}">${escapeHtml(label)}</time>`);
 }
 
 function formatDuration(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  return hours > 0 ? `${hours}h ${minutes}m ${rest}s` : `${minutes}m ${rest}s`;
+  if (seconds < 60) {
+    return plural(seconds, "sec");
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    const rest = seconds % 60;
+    return rest > 0 ? `${plural(minutes, "min")} ${plural(rest, "sec")}` : plural(minutes, "min");
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest > 0 ? `${plural(hours, "hr")} ${plural(rest, "min")}` : plural(hours, "hr");
+  }
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest > 0 ? `${plural(days, "day")} ${plural(rest, "hr")}` : plural(days, "day");
+}
+
+function relativeTimeLabel(diffMs: number, mode: TimeRenderOptions["mode"]): string {
+  const amount = relativeAmount(Math.abs(diffMs));
+  if (amount === "now") {
+    return "now";
+  }
+  if (diffMs >= 0) {
+    return mode === "expires" ? `expires in ${amount}` : `in ${amount}`;
+  }
+  return mode === "expires" ? `expired ${amount} ago` : `${amount} ago`;
+}
+
+function relativeAmount(absMs: number): string {
+  if (absMs < 1_000) {
+    return "now";
+  }
+  const seconds = Math.max(1, Math.round(absMs / 1_000));
+  if (seconds < 60) {
+    return plural(seconds, "sec");
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return plural(minutes, "min");
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return plural(hours, "hr");
+  }
+  return plural(Math.round(hours / 24), "day");
+}
+
+function plural(value: number, unit: string): string {
+  return `${value} ${unit}${value === 1 ? "" : "s"}`;
+}
+
+function timestampMs(value: unknown): number | undefined {
+  const text = stringValue(value);
+  if (!text) {
+    return undefined;
+  }
+  const ms = Date.parse(text);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+function inlineHtml(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  if (isHtmlFragment(value)) {
+    return value.__html;
+  }
+  return escapeHtml(String(value));
 }
 
 function shortValue(value: string): string {
@@ -828,6 +1190,20 @@ function scalarValue(value: unknown): string | undefined {
   }
   if (typeof value === "bigint") {
     return value.toString();
+  }
+  return undefined;
+}
+
+function uniqueStrings(values: unknown[]): string[] {
+  return [...new Set(values.map((value) => stringValue(value)?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && /^[0-9]+$/.test(value)) {
+    return Number(value);
   }
   return undefined;
 }

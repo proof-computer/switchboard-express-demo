@@ -49,6 +49,7 @@ interface DemoState {
   observability?: RelayObservabilitySnapshot;
   observabilityTimer?: NodeJS.Timeout;
   readyReportTimer?: NodeJS.Timeout;
+  geoIpCache: Record<string, GeoIpCacheEntry>;
   traffic: TrafficState;
   signerMode?: string;
   jobSigner?: string;
@@ -66,6 +67,18 @@ interface RelayObservabilitySnapshot {
   status?: number;
   payload?: Record<string, unknown>;
   error?: string;
+}
+
+interface GatewayGeoIp {
+  countryCode?: string;
+  country?: string;
+  flag?: string;
+  checkedAt: string;
+}
+
+interface GeoIpCacheEntry {
+  expiresAt: number;
+  result?: GatewayGeoIp;
 }
 
 interface TrafficState {
@@ -112,6 +125,7 @@ export async function startSwitchboardExpressDemo(
     startedAt: new Date().toISOString(),
     challengeCount: 0,
     certificates: [],
+    geoIpCache: {},
     traffic: createTrafficState()
   };
   void resolveDemoJobSigner(runtime, state);
@@ -211,11 +225,12 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
   await resolveDemoJobSigner(runtime, state);
   const endpointHostname = runtime.configValue("ENDPOINT_HOSTNAME");
   const certificateHostnames = configuredCertificateHostnames(runtime, endpointHostname);
-  const customerHostnames = certificateHostnames.filter((hostname) => hostname !== endpointHostname);
+  const customerHostnames = configuredCustomerHostnames(runtime, state.observability?.payload, certificateHostnames, endpointHostname);
+  const gatewayGeoIp = await gatewayGeoIpStatus(state, state.observability?.payload);
   const publicUrl = endpointHostname ? `https://${endpointHostname}/` : undefined;
   const challengeUrl = endpointHostname ? `${publicUrl}.well-known/proofcomputer/challenge?nonce=demo` : undefined;
 
-  return {
+  const status: Record<string, unknown> = {
     ok: true,
     name: state.title,
     now: new Date().toISOString(),
@@ -288,6 +303,10 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
       "SWITCHBOARD_RELAY_DIAGNOSTICS_TIMEOUT_MS"
     ])
   };
+  if (Object.keys(gatewayGeoIp).length > 0) {
+    status.gatewayGeoIp = gatewayGeoIp;
+  }
+  return status;
 }
 
 function inferredRegistrationState(runtime: SwitchboardRuntime, state: DemoState): Record<string, unknown> {
@@ -519,6 +538,103 @@ async function pollObservabilityOnce(
   }
 }
 
+const GEO_IP_SUCCESS_TTL_MS = 60 * 60 * 1_000;
+const GEO_IP_FAILURE_TTL_MS = 5 * 60 * 1_000;
+const GEO_IP_LOOKUP_TIMEOUT_MS = 1_500;
+
+async function gatewayGeoIpStatus(
+  state: DemoState,
+  observability: Record<string, unknown> | undefined
+): Promise<Record<string, GatewayGeoIp>> {
+  const addresses = gatewayPublicAddresses(observability);
+  if (addresses.length === 0) {
+    return {};
+  }
+  const entries = await Promise.all(addresses.map(async (ip) => [ip, await cachedGatewayGeoIp(state, ip)] as const));
+  return Object.fromEntries(entries.filter((entry): entry is readonly [string, GatewayGeoIp] => Boolean(entry[1])));
+}
+
+async function cachedGatewayGeoIp(state: DemoState, ip: string): Promise<GatewayGeoIp | undefined> {
+  const now = Date.now();
+  const cached = state.geoIpCache[ip];
+  if (cached && cached.expiresAt > now) {
+    return cached.result;
+  }
+  const checkedAt = new Date(now).toISOString();
+  try {
+    const result = await fetchGatewayGeoIp(ip, checkedAt);
+    state.geoIpCache[ip] = {
+      expiresAt: now + (result ? GEO_IP_SUCCESS_TTL_MS : GEO_IP_FAILURE_TTL_MS),
+      result
+    };
+    return result;
+  } catch {
+    state.geoIpCache[ip] = {
+      expiresAt: now + GEO_IP_FAILURE_TTL_MS
+    };
+    return undefined;
+  }
+}
+
+async function fetchGatewayGeoIp(ip: string, checkedAt: string): Promise<GatewayGeoIp | undefined> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GEO_IP_LOOKUP_TIMEOUT_MS).unref();
+  try {
+    const response = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}`, {
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const payload = await response.json().catch(() => undefined) as Record<string, unknown> | undefined;
+    if (!payload || payload.status !== "success") {
+      return undefined;
+    }
+    const countryCode = uppercaseCountryCode(stringField(payload, "countryCode"));
+    const country = stringField(payload, "country");
+    if (!countryCode && !country) {
+      return undefined;
+    }
+    return {
+      countryCode,
+      country,
+      flag: countryCode ? countryCodeToFlag(countryCode) : undefined,
+      checkedAt
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function gatewayPublicAddresses(observability: Record<string, unknown> | undefined): string[] {
+  const capability = recordField(recordField(observability, "gateway"), "capability");
+  const publicAddresses = capability?.publicAddresses;
+  if (!Array.isArray(publicAddresses)) {
+    return [];
+  }
+  return [...new Set(publicAddresses.map((item) => typeof item === "string" && item.length > 0 ? item : undefined).filter((item): item is string => Boolean(item)))];
+}
+
+function uppercaseCountryCode(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(normalized) ? normalized : undefined;
+}
+
+function countryCodeToFlag(countryCode: string): string | undefined {
+  const normalized = uppercaseCountryCode(countryCode);
+  if (!normalized) {
+    return undefined;
+  }
+  const regionalIndicatorA = 0x1f1e6;
+  const asciiA = 65;
+  return String.fromCodePoint(
+    ...[...normalized].map((letter) => regionalIndicatorA + letter.charCodeAt(0) - asciiA)
+  );
+}
+
 async function resolveDemoJobSigner(runtime: SwitchboardRuntime, state: DemoState): Promise<void> {
   if (state.jobSigner) {
     return;
@@ -559,6 +675,44 @@ async function runRelayDiagnosticsOnce(runtime: SwitchboardRuntime, state: DemoS
 function configuredCertificateHostnames(runtime: SwitchboardRuntime, endpointHostname: string | undefined): string[] {
   const configured = splitCsv(runtime.configValue("SWITCHBOARD_CERTIFICATE_HOSTNAMES") ?? "");
   return [...new Set((configured.length > 0 ? configured : endpointHostname ? [endpointHostname] : []).map(normalizeHostname).filter(Boolean))];
+}
+
+function configuredCustomerHostnames(
+  runtime: SwitchboardRuntime,
+  observability: Record<string, unknown> | undefined,
+  certificateHostnames: string[],
+  endpointHostname: string | undefined
+): string[] {
+  const configured = splitCsv(runtime.configValue("SWITCHBOARD_CUSTOMER_HOSTNAMES") ?? "");
+  if (configured.length > 0) {
+    return uniqueHostnames(configured);
+  }
+  const observed = observedCustomerHostnames(observability);
+  if (observed.length > 0) {
+    return observed;
+  }
+  const endpoint = endpointHostname ? normalizeHostname(endpointHostname) : undefined;
+  return uniqueHostnames(
+    certificateHostnames.filter((hostname) => hostname !== endpoint && !looksLikeValidationHostname(hostname))
+  );
+}
+
+function observedCustomerHostnames(observability: Record<string, unknown> | undefined): string[] {
+  const customerHostnames = recordField(recordField(observability, "dns"), "customerHostnames");
+  const rows = customerHostnames?.hostnames;
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+  return uniqueHostnames(rows.map((item) => stringField(item, "customerHostname")).filter((item): item is string => Boolean(item)));
+}
+
+function looksLikeValidationHostname(hostname: string): boolean {
+  const normalized = normalizeHostname(hostname);
+  return normalized.includes("-validation.") || normalized.startsWith("validation.");
+}
+
+function uniqueHostnames(hostnames: string[]): string[] {
+  return [...new Set(hostnames.map(normalizeHostname).filter(Boolean))];
 }
 
 function requiredRegistrationConfigNames(): string[] {
@@ -668,6 +822,22 @@ function splitCsv(value: string): string[] {
 
 function normalizeHostname(hostname: string): string {
   return hostname.trim().replace(/\.$/, "").toLowerCase();
+}
+
+function recordField(value: unknown, name: string): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const field = (value as Record<string, unknown>)[name];
+  return field && typeof field === "object" && !Array.isArray(field) ? field as Record<string, unknown> : undefined;
+}
+
+function stringField(value: unknown, name: string): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const field = (value as Record<string, unknown>)[name];
+  return typeof field === "string" && field.length > 0 ? field : undefined;
 }
 
 function listen(server: HttpServer, host: string, port: number): Promise<void> {

@@ -1,6 +1,6 @@
 {
   "name": "@proofcomputer/switchboard-express-demo",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Rich Express demo app for Switchboard launch-demo.",
   "repository": {
     "type": "git",
@@ -28,7 +28,7 @@
     "pack:dry-run": "npm pack --dry-run --json"
   },
   "dependencies": {
-    "@proofcomputer/switchboard-express": "github:proof-computer/switchboard-express#v0.1.0",
+    "@proofcomputer/switchboard-express": "github:proof-computer/switchboard-express#v0.1.1",
     "@proofcomputer/switchboard-sdk": "github:proof-computer/switchboard-sdk#v0.1.2",
     "express": "^5.2.1"
   },

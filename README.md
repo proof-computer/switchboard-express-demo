@@ -8,7 +8,7 @@ published on npmjs.com yet.
 ## Install
 
 ```sh
-npm install github:proof-computer/switchboard-express-demo#v0.1.6
+npm install github:proof-computer/switchboard-express-demo#v0.1.7
 ```
 
 Use `#main` only when intentionally testing unreleased changes. npmjs.com

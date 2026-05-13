@@ -10,7 +10,12 @@ import { renderDemoPage } from "../dist/demo-page.js";
 const fixturePath = path.resolve(process.argv[2] ?? "tests/fixtures/observability-status.json");
 const status = JSON.parse(await readFile(fixturePath, "utf8"));
 const htmlPath = path.join(tmpdir(), "switchboard-express-demo.html");
-await writeFile(htmlPath, renderDemoPage(status));
+await writeFile(htmlPath, renderDemoPage(status, {
+  client: {
+    ip: "203.0.113.42",
+    userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.86 Safari/537.36"
+  }
+}));
 
 const chrome = process.env.CHROME_BIN ?? findChrome();
 if (!chrome) {

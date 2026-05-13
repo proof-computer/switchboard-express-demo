@@ -16,7 +16,7 @@ const server = http.createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${host}:${port}`);
     if (url.pathname === "/") {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      response.end(renderDemoPage(status));
+      response.end(renderDemoPage(status, { client: clientInfoFromRequest(request) }));
       return;
     }
     if (url.pathname === "/status") {
@@ -80,4 +80,33 @@ function requiredArg(value, name) {
     throw new Error(`Missing value for ${name}`);
   }
   return value;
+}
+
+function clientInfoFromRequest(request) {
+  const forwarded = headerValue(request.headers["x-forwarded-for"])?.split(",")[0]?.trim();
+  return {
+    ip: normalizeClientIp(forwarded ?? request.socket.remoteAddress),
+    userAgent: headerValue(request.headers["user-agent"])
+  };
+}
+
+function headerValue(value) {
+  if (Array.isArray(value)) {
+    return value.find((item) => item.length > 0);
+  }
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function normalizeClientIp(value) {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed.startsWith("::ffff:")) {
+    return trimmed.slice("::ffff:".length);
+  }
+  return trimmed;
 }

@@ -7,15 +7,24 @@ describe("Switchboard Express demo server", () => {
   it("serves the rich launch-demo page and status payload", async () => {
     const demo = await startSwitchboardExpressDemo({ port: 0 });
     try {
-      const html = await fetch(demo.url).then((response) => response.text());
+      const html = await fetch(demo.url, {
+        headers: {
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.86 Safari/537.36",
+          "x-forwarded-for": "203.0.113.77"
+        }
+      }).then((response) => response.text());
       const status = await fetch(new URL("/status", demo.url)).then((response) => response.json());
 
       assert.match(html, /<title>Switchboard demo<\/title>/);
-      assert.match(html, /Running on <span class="acurast-accent">Acurast,/);
+      assert.match(html, /Running on <span class="acurast-accent">Acurast\.<\/span>/);
       assert.match(html, /<h2>Route<\/h2>/);
       assert.match(html, /<h2>Gateway<\/h2>/);
       assert.match(html, /<h2>DNS & CNAME<\/h2>/);
-      assert.match(html, /<h2>Route Traffic<\/h2>/);
+      assert.doesNotMatch(html, /<h2>Route Traffic<\/h2>/);
+      assert.doesNotMatch(html, /<section class="band summary">/);
+      assert.match(html, /<span class="flow-row-key">Browser IP<\/span><span class="flow-row-value">203\.0\.113\.77<\/span>/);
+      assert.match(html, /<span class="flow-row-key">User agent<\/span><span class="flow-row-value">Chrome v123<\/span>/);
+      assert.doesNotMatch(html, /Chrome\/123\.0\.6312\.86 Safari\/537\.36/);
       assert.match(html, /<h2>Acurast Job<\/h2>/);
       assert.match(html, /<h2>Polkadot Hub<\/h2>/);
       assert.match(html, /<h2>Validators<\/h2>/);

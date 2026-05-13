@@ -103,10 +103,10 @@ export function createSwitchboardExpressDemoApp(
   const title = options.title ?? "Switchboard Express Demo";
   const app = express();
 
-  app.get("/", async (_request, response, next) => {
+  app.get("/", async (request, response, next) => {
     try {
       const status = options.status ? await options.status() : placeholderStatus(title);
-      response.type("html").send(renderDemoPage(status));
+      response.type("html").send(renderDemoPage(status, { client: clientInfoFromRequest(request) }));
     } catch (error) {
       next(error);
     }
@@ -780,6 +780,36 @@ function networkAddressSummary(): Record<string, unknown> {
 
 function configPresence(runtime: SwitchboardRuntime, names: string[]): Record<string, boolean> {
   return Object.fromEntries(names.map((name) => [name, Boolean(runtime.configValue(name))]));
+}
+
+function clientInfoFromRequest(request: express.Request): { ip?: string; userAgent?: string } {
+  const forwarded = headerValue(request.headers["x-forwarded-for"])?.split(",")[0]?.trim();
+  const ip = normalizeClientIp(forwarded ?? request.ip ?? request.socket.remoteAddress);
+  return {
+    ip,
+    userAgent: headerValue(request.headers["user-agent"])
+  };
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value.find((item) => item.length > 0);
+  }
+  return value && value.length > 0 ? value : undefined;
+}
+
+function normalizeClientIp(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed.startsWith("::ffff:")) {
+    return trimmed.slice("::ffff:".length);
+  }
+  return trimmed;
 }
 
 function relayHost(runtime: SwitchboardRuntime): string | undefined {

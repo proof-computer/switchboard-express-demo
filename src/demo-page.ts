@@ -13,6 +13,28 @@ interface TimeRenderOptions {
   mode?: "relative" | "expires";
 }
 
+export interface DemoPageClientInfo {
+  ip?: string;
+  userAgent?: string;
+  userAgentSummary?: string;
+}
+
+export interface DemoPageRenderOptions {
+  client?: DemoPageClientInfo;
+}
+
+interface FlowRenderOptions {
+  publicUrl?: string;
+  publicHostname?: string;
+  gatewayGeoIp: Record<string, Record<string, unknown>>;
+  observability?: Record<string, any>;
+  dns?: Record<string, any>;
+  certificate?: Record<string, any>;
+  validatorSummary?: Record<string, any>;
+  deployment?: DeploymentInfo;
+  client?: DemoPageClientInfo;
+}
+
 const FIELD_HELP: Record<string, string> = {
   "TLS Certificate": "Certificate authority and expiry state for the route TLS certificate.",
   "Hub Registration": "Polkadot Hub registration state for this Switchboard route.",
@@ -73,7 +95,7 @@ const FIELD_HELP: Record<string, string> = {
   Successes: "Recent successful validator reports.",
   Failures: "Recent failed validator reports.",
   "Latest report": "Newest validator report summary.",
-  Validators: "Validator identities and latest health signals.",
+  Validators: "Validator identities assigned to observe this route.",
   Node: "Node.js runtime version running the demo app.",
   Platform: "Operating-system platform and CPU architecture.",
   "Acurast STD": "Whether the Acurast runtime standard library is present.",
@@ -88,26 +110,33 @@ const FIELD_HELP: Record<string, string> = {
   "Environment presence": "Boolean summary of relevant environment variables."
 };
 
-export function renderDemoPage(status: Record<string, any>): string {
+export function renderDemoPage(status: Record<string, any>, options: DemoPageRenderOptions = {}): string {
   const publicUrl = stringValue(status.public?.url);
   const publicHostname = stringValue(status.public?.hostname);
   const publicLabel = publicHostname ? shortHostname(publicHostname) : publicUrl;
   const challengeUrl = stringValue(status.public?.challengeUrl);
   const certificate = primaryCertificate(status);
-  const registration = status.registration;
   const relayHealth = status.relayDiagnostics?.health;
   const relayDns = status.relayDiagnostics?.dns;
   const deployment = deploymentInfo(status.ids?.deploymentId);
   const deploymentLink = deploymentHtml(deployment);
   const observability = observabilityPayload(status);
-  const routeMetrics = routeMetricsPayload(status);
-  const firstRouteMetric = firstRouteMetricRow(status);
-  const localTraffic = status.traffic?.local;
   const validatorSummary = observability?.validators;
   const dns = observability?.dns;
   const nowMs = timestampMs(status.now) ?? Date.now();
   const gatewayGeoIp = geoIpPayload(status.gatewayGeoIp);
   const certificateHostnames = certificateHostnamesSummary(status);
+  const flow = switchboardFlowHtml(status, {
+    publicUrl,
+    publicHostname,
+    gatewayGeoIp,
+    observability,
+    dns,
+    certificate,
+    validatorSummary,
+    deployment,
+    client: clientRenderInfo(options.client)
+  });
 
   return `<!doctype html>
 <html lang="en">
@@ -136,7 +165,7 @@ export function renderDemoPage(status: Record<string, any>): string {
       margin: 0;
       background: var(--frost);
       color: var(--ink);
-      font-size: 15px;
+      font-size: 16px;
       line-height: 1.45;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -150,27 +179,33 @@ export function renderDemoPage(status: Record<string, any>): string {
     }
     a:hover { text-decoration-color: var(--ink); }
     .shell {
-      width: min(1180px, calc(100vw - 32px));
-      margin: 0 auto;
-      padding: 28px 0 44px;
+      width: 100%;
+      margin: 0;
+      padding: 0 0 44px;
+    }
+    .band {
+      width: 100%;
+      padding-left: clamp(16px, 3vw, 44px);
+      padding-right: clamp(16px, 3vw, 44px);
     }
     .brand-bar {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 0 0 18px;
+      padding-top: 24px;
+      padding-bottom: 18px;
       border-bottom: 1px solid var(--smoke);
       color: var(--ink);
     }
     .proof-mark {
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       flex: 0 0 auto;
       border-radius: 50%;
       background: var(--beacon);
     }
     .proof-wordmark {
-      font-size: 20px;
+      font-size: 22px;
       line-height: 1;
       font-weight: 800;
       letter-spacing: 0;
@@ -186,11 +221,11 @@ export function renderDemoPage(status: Record<string, any>): string {
       letter-spacing: 0;
     }
     header {
-      margin: 22px 0 18px;
-      padding: 84px 48px 78px;
+      margin: 0;
+      padding-top: 84px;
+      padding-bottom: 78px;
       background: var(--hull);
       color: var(--frost);
-      border-radius: 8px;
       overflow: hidden;
       position: relative;
     }
@@ -200,7 +235,7 @@ export function renderDemoPage(status: Record<string, any>): string {
       inset: 0;
       background: linear-gradient(90deg, rgba(26, 37, 56, 0) 0%, rgba(26, 37, 56, 0.04) 62%, rgba(26, 37, 56, 0.38) 100%);
       pointer-events: none;
-      z-index: 1;
+      z-index: 0;
     }
     .hero-cable {
       position: absolute;
@@ -210,43 +245,48 @@ export function renderDemoPage(status: Record<string, any>): string {
       height: 340px;
       opacity: 1;
       pointer-events: none;
-      z-index: 0;
+      z-index: 1;
     }
     .header-copy {
       position: relative;
       z-index: 2;
     }
     h1 {
-      max-width: 880px;
+      max-width: 1180px;
       margin: 0;
       font-size: 92px;
-      line-height: 0.92;
+      line-height: 0.98;
       font-weight: 800;
       letter-spacing: 0;
     }
     .accent { color: var(--beacon); }
     .acurast-accent { color: var(--acurast-green); }
-    .metric, article, .diagnostics {
+    .section-heading {
+      margin: 30px 0 12px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    .section-heading h2 {
+      margin: 0;
+      padding: 0;
+      border: 0;
+      font-size: 32px;
+      line-height: 1.1;
+      font-weight: 800;
+    }
+    article, .diagnostics, .flow-node {
       border: 1px solid var(--smoke);
       border-radius: 8px;
       background: var(--panel);
-      box-shadow: 0 1px 0 rgba(14, 18, 24, 0.03);
-    }
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-      margin: 18px 0;
-    }
-    .metric {
-      padding: 14px 16px;
-      min-width: 0;
+      box-shadow: 0 10px 24px rgba(14, 18, 24, 0.06);
     }
     .label {
       display: block;
       color: var(--stone);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0;
@@ -307,25 +347,166 @@ export function renderDemoPage(status: Record<string, any>): string {
     .country-flag {
       margin-left: 4px;
     }
-    .value {
-      display: block;
-      margin-top: 5px;
-      font-size: 16px;
-      font-weight: 700;
+    .flow-band {
+      --flow-gap: 28px;
+      --flow-gap-total: 56px;
+      padding-top: 24px;
+      padding-bottom: 8px;
+    }
+    .switchboard-flow {
+      position: relative;
+      overflow: visible;
+      padding: 6px 0 14px;
+    }
+    .flow-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 20px;
+    }
+    .flow-title {
+      margin: 0;
+      padding: 0;
+      border: 0;
+      font-size: 34px;
+      line-height: 1.1;
+      font-weight: 800;
+    }
+    .flow-rail {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: center;
+      gap: var(--flow-gap);
+      height: 48px;
+      margin: 0;
+    }
+    .flow-line {
+      position: absolute;
+      left: calc((100% - var(--flow-gap-total)) / 6);
+      right: calc((100% - var(--flow-gap-total)) / 6);
+      top: 50%;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--beacon);
+      transform: translateY(-50%);
+    }
+    .flow-dot {
+      position: relative;
+      z-index: 1;
+      justify-self: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--beacon);
+      border: 0;
+      box-shadow: none;
+    }
+    .flow-dot:nth-child(2) { grid-column: 1; }
+    .flow-dot:nth-child(3) { grid-column: 2; }
+    .flow-dot:nth-child(4) { grid-column: 3; }
+    .flow-nodes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--flow-gap);
+      margin-top: 10px;
+    }
+    .flow-node {
+      min-width: 0;
+      padding: 22px;
+    }
+    .flow-node-label {
+      margin: 0 0 3px;
+      color: var(--stone);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1;
+      text-transform: uppercase;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .flow-node-title {
+      margin: 0 0 16px;
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 800;
+    }
+    .flow-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      padding: 11px 0;
+      border-top: 1px solid #edf0f4;
+    }
+    .flow-row-key {
+      color: var(--stone);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .flow-row-value {
+      min-width: 0;
+      font-size: 15px;
+      font-weight: 650;
       overflow-wrap: anywhere;
     }
-    .value-secondary {
-      display: block;
-      margin-top: 3px;
+    .flow-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 20px;
+      transform: translateY(-8px);
+    }
+    .flow-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      border: 1px solid var(--smoke);
+      border-radius: 999px;
+      padding: 11px 16px;
+      background: #fbfcfd;
       color: var(--steel);
-      font-size: 13px;
-      font-weight: 600;
-      overflow-wrap: anywhere;
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .flow-chip::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--stone);
+    }
+    .flow-chip.is-ok::before { background: var(--acurast-green); }
+    .flow-chip.is-warn::before { background: var(--beacon); }
+    .flow-chip-label {
+      color: var(--stone);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .flow-chip-value {
+      position: relative;
+      top: -2px;
+      line-height: 1;
     }
     .grid {
       display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 22px;
+    }
+    .grid.acurast-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+    }
+    .grid.switchboard-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 26px;
     }
     article {
       min-width: 0;
@@ -333,9 +514,9 @@ export function renderDemoPage(status: Record<string, any>): string {
     }
     h2 {
       margin: 0;
-      padding: 13px 16px;
+      padding: 18px 20px;
       border-bottom: 1px solid var(--smoke);
-      font-size: 15px;
+      font-size: 19px;
       line-height: 1.2;
       font-weight: 800;
       letter-spacing: 0;
@@ -346,7 +527,7 @@ export function renderDemoPage(status: Record<string, any>): string {
       table-layout: fixed;
     }
     th, td {
-      padding: 10px 16px;
+      padding: 13px 20px;
       vertical-align: top;
       border-bottom: 1px solid #edf0f4;
       overflow-wrap: anywhere;
@@ -356,12 +537,12 @@ export function renderDemoPage(status: Record<string, any>): string {
       color: var(--stone);
       text-align: left;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0;
     }
-    td { font-size: 14px; font-weight: 560; }
+    td { font-size: 16px; font-weight: 610; }
     tr:last-child th, tr:last-child td { border-bottom: 0; }
     pre {
       margin: 0;
@@ -372,28 +553,39 @@ export function renderDemoPage(status: Record<string, any>): string {
     }
     code, .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 13px;
+      font-size: 14px;
     }
     .muted { color: var(--stone); font-weight: 520; }
+    .diagnostics-band {
+      margin-top: 16px;
+    }
     .diagnostics {
-      margin-top: 12px;
       overflow: hidden;
     }
     .diagnostics summary {
       cursor: pointer;
-      padding: 13px 16px;
+      padding: 18px 20px;
+      font-size: 19px;
       font-weight: 800;
     }
     .diagnostics table { border-top: 1px solid var(--smoke); }
     @media (max-width: 1040px) {
       h1 { font-size: 72px; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .flow-nodes { grid-template-columns: 1fr; }
+      .flow-rail { display: none; }
     }
     @media (max-width: 820px) {
-      .shell { width: min(100vw - 20px, 1180px); padding-top: 16px; }
+      .shell { padding-bottom: 28px; }
+      .band {
+        padding-left: 10px;
+        padding-right: 10px;
+      }
       .brand-bar { align-items: flex-start; }
       .brand-doc-tag { display: none; }
       header {
-        padding: 58px 18px 54px;
+        padding-top: 58px;
+        padding-bottom: 54px;
       }
       header::after {
         background: linear-gradient(90deg, rgba(26, 37, 56, 0) 0%, rgba(26, 37, 56, 0.08) 78%, rgba(26, 37, 56, 0.4) 100%);
@@ -403,12 +595,15 @@ export function renderDemoPage(status: Record<string, any>): string {
         right: -286px;
         width: 430px;
         height: 260px;
-        opacity: 0.92;
+        opacity: 1;
       }
-      .summary, .grid { grid-template-columns: 1fr; }
+      .grid, .grid.acurast-grid { grid-template-columns: 1fr; }
+      .grid.switchboard-grid { grid-template-columns: 1fr; }
+      .switchboard-flow { padding: 0; }
+      .flow-head, .section-heading { display: block; }
       h1 {
         font-size: 40px;
-        line-height: 0.98;
+        line-height: 1.04;
       }
       .acurast-accent { display: block; }
       th, td { display: block; width: 100%; }
@@ -419,32 +614,69 @@ export function renderDemoPage(status: Record<string, any>): string {
 </head>
 <body>
   <div class="shell">
-    <div class="brand-bar">
+    <div class="band brand-bar">
       <span class="proof-mark" aria-hidden="true"></span>
       <span class="proof-wordmark">PROOF<span class="dot">.</span></span>
       <span class="brand-spacer"></span>
       <span class="brand-doc-tag">Switchboard · Acurast webserver</span>
     </div>
 
-    <header>
+    <header class="band">
       <svg class="hero-cable" viewBox="0 0 720 480" aria-hidden="true">
         <path d="M 60 380 Q 360 -120, 660 380" stroke="#ff6a2c" stroke-width="36" stroke-linecap="round" fill="none"/>
         <circle cx="60" cy="380" r="56" fill="#ff6a2c"/>
         <circle cx="660" cy="380" r="56" fill="#ff6a2c"/>
       </svg>
       <div class="header-copy">
-        <h1>Running on <span class="acurast-accent">Acurast,</span> ingress by <span class="accent">Switchboard</span></h1>
+        <h1>Running on <span class="acurast-accent">Acurast.</span><br/>Ingress by <span class="accent">Switchboard.</span></h1>
       </div>
     </header>
 
-    <section class="summary">
-      ${metricHtml("TLS Certificate", certificate?.issuer ?? status.certificate?.state, certificate?.notAfter ? formatDateTime(certificate.notAfter, { nowMs, mode: "expires" }) : undefined)}
-      ${metricHtml("Hub Registration", registration?.relayResponse?.txHash ? shortValue(registration.relayResponse.txHash) : registration?.state, blockSecondaryHtml(registration?.relayResponse?.blockNumber))}
-      ${metricHtml("Acurast Runtime", runtimeLabel(status), deploymentLink)}
-      ${metricHtml("Route Traffic", formatBytes(counterValue(firstRouteMetric, "downstreamBytesSentTotal")))}
+    <section class="band flow-band">
+      ${flow}
     </section>
 
-    <section class="grid">
+    <section class="band acurast-section">
+      <div class="section-heading">
+        <div>
+          <h2>Acurast Runtime</h2>
+        </div>
+      </div>
+      <div class="grid acurast-grid">
+        <article>
+          <h2>Acurast Job</h2>
+          ${tableHtml([
+            ["Deployment", deploymentLink],
+            ["Job", hashHtml(status.ids?.jobId)],
+            ["Job signer", hashHtml(status.ids?.jobSigner)],
+            ["Signer mode", status.ids?.signerMode],
+            ["Runtime", runtimeLabel(status)],
+            ["Started", formatDateTime(status.startedAt, { nowMs })],
+            ["Uptime", formatDuration(Number(status.uptimeSeconds ?? 0))]
+          ])}
+        </article>
+
+        <article>
+          <h2>Runtime Details</h2>
+          ${tableHtml([
+            ["Node", status.runtime?.nodeVersion],
+            ["Platform", `${status.runtime?.platform ?? "unknown"} ${status.runtime?.arch ?? ""}`.trim()],
+            ["Acurast STD", boolLabel(status.runtime?.hasStd)],
+            ["Secp256k1 signer", boolLabel(status.runtime?.hasStdSignersSecp256k1)],
+            ["Network allowlist", boolLabel(status.runtime?.hasStdNetAddAllowedHostnames)],
+            ["App version", status.runtime?.appVersion ?? "unreported"]
+          ])}
+        </article>
+      </div>
+    </section>
+
+    <section class="band switchboard-section">
+      <div class="section-heading">
+        <div>
+          <h2>Switchboard Session</h2>
+        </div>
+      </div>
+      <div class="grid switchboard-grid">
       <article>
         <h2>Route</h2>
         ${tableHtml([
@@ -483,33 +715,6 @@ export function renderDemoPage(status: Record<string, any>): string {
       </article>
 
       <article>
-        <h2>Route Traffic</h2>
-        ${tableHtml([
-          ["Local requests", localTraffic?.requestsTotal],
-          ["Local sent", formatBytes(localTraffic?.bytesSentTotal)],
-          ["Local received", formatBytes(localTraffic?.bytesReceivedTotal)],
-          ["Gateway connections", counterValue(firstRouteMetric, "downstreamConnectionsTotal")],
-          ["Gateway received", formatBytes(counterValue(firstRouteMetric, "downstreamBytesReceivedTotal"))],
-          ["Gateway sent", formatBytes(counterValue(firstRouteMetric, "downstreamBytesSentTotal"))],
-          ["Metric source", routeMetrics?.source],
-          ["Sampled", formatDateTime(firstRouteMetric?.sampledAt, { nowMs })]
-        ])}
-      </article>
-
-      <article>
-        <h2>Acurast Job</h2>
-        ${tableHtml([
-          ["Deployment", deploymentLink],
-          ["Job", hashHtml(status.ids?.jobId)],
-          ["Job signer", hashHtml(status.ids?.jobSigner)],
-          ["Signer mode", status.ids?.signerMode],
-          ["Runtime", runtimeLabel(status)],
-          ["Started", formatDateTime(status.startedAt, { nowMs })],
-          ["Uptime", formatDuration(Number(status.uptimeSeconds ?? 0))]
-        ])}
-      </article>
-
-      <article>
         <h2>Polkadot Hub</h2>
         ${tableHtml([
           ["Chain ID", status.routing?.chainId],
@@ -538,7 +743,7 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["Count", status.challenges?.count],
           ["Last at", formatDateTime(status.challenges?.lastAt, { nowMs })],
           ["Nonce length", status.challenges?.last?.nonceLength],
-          ["User agent", status.challenges?.last?.userAgent],
+          ["User agent", summarizeUserAgent(status.challenges?.last?.userAgent)],
           ["Remote address", status.challenges?.last?.remoteAddress]
         ])}
       </article>
@@ -553,35 +758,26 @@ export function renderDemoPage(status: Record<string, any>): string {
           ["Successes", validatorSummary?.counts?.successes],
           ["Failures", validatorSummary?.counts?.failures],
           ["Latest report", latestValidatorReportSummary(validatorSummary, nowMs)],
-          ["Validators", validatorRowsSummary(validatorSummary, nowMs)]
+          ["Validators", validatorRowsSummary(validatorSummary)]
         ])}
       </article>
-
-      <article>
-        <h2>Runtime Details</h2>
-        ${tableHtml([
-          ["Node", status.runtime?.nodeVersion],
-          ["Platform", `${status.runtime?.platform ?? "unknown"} ${status.runtime?.arch ?? ""}`.trim()],
-          ["Acurast STD", boolLabel(status.runtime?.hasStd)],
-          ["Secp256k1 signer", boolLabel(status.runtime?.hasStdSignersSecp256k1)],
-          ["Network allowlist", boolLabel(status.runtime?.hasStdNetAddAllowedHostnames)],
-          ["App version", status.runtime?.appVersion ?? "unreported"]
-        ])}
-      </article>
+      </div>
     </section>
 
-    <details class="diagnostics">
-      <summary>Diagnostic Data</summary>
-      ${tableHtml([
-        ["Registration", status.registration],
-        ["Certificate", status.certificate],
-        ["Traffic", status.traffic],
-        ["Observability", status.observability],
-        ["Relay diagnostics", status.relayDiagnostics],
-        ["Network", status.network],
-        ["Environment presence", status.envPresence]
-      ])}
-    </details>
+    <section class="band diagnostics-band">
+      <details class="diagnostics">
+        <summary>Diagnostic Data</summary>
+        ${tableHtml([
+          ["Registration", status.registration],
+          ["Certificate", status.certificate],
+          ["Traffic", status.traffic],
+          ["Observability", status.observability],
+          ["Relay diagnostics", status.relayDiagnostics],
+          ["Network", status.network],
+          ["Environment presence", status.envPresence]
+        ])}
+      </details>
+    </section>
   </div>
   <script type="module">
     import { autoUpdate, computePosition, flip, offset, shift } from "https://cdn.jsdelivr.net/npm/@floating-ui/dom@1.7.4/+esm";
@@ -640,11 +836,6 @@ export function renderDemoPage(status: Record<string, any>): string {
 </html>`;
 }
 
-function metricHtml(label: string, value: unknown, secondary?: unknown): string {
-  const secondaryHtml = secondary === undefined || secondary === null || secondary === "" ? "" : `<span class="value-secondary">${renderValue(secondary)}</span>`;
-  return `<div class="metric"><span class="label">${fieldLabelHtml(label)}</span><span class="value">${renderValue(value)}</span>${secondaryHtml}</div>`;
-}
-
 function tableHtml(rows: Array<[string, unknown]>): string {
   return `<table><tbody>${rows
     .map(([label, value]) => `<tr><th>${fieldLabelHtml(label)}</th><td>${renderValue(value)}</td></tr>`)
@@ -673,6 +864,157 @@ function externalLinkHtml(href: string, label: string, title = href): HtmlFragme
 
 function htmlFragment(html: string): HtmlFragment {
   return { __html: html };
+}
+
+function switchboardFlowHtml(status: Record<string, any>, options: FlowRenderOptions): string {
+  const gatewayId = stringValue(options.observability?.gateway?.gatewayId) ?? knownGatewayId(status);
+  const gatewayAddresses = publicAddressesSummary(options.observability?.gateway?.capability?.publicAddresses, options.gatewayGeoIp);
+  const firstRouteMetric = firstRouteMetricRow(status);
+  const gatewayTraffic = formatBytes(counterValue(firstRouteMetric, "downstreamBytesSentTotal"));
+  const processorId =
+    stringValue(options.observability?.gateway?.processorId) ??
+    stringValue(status.routing?.processorId) ??
+    stringValue(status.acurast?.processorId);
+  const jobNetworkIps = Array.isArray(status.network?.publicIpv4)
+    ? status.network.publicIpv4.map((item: unknown) => stringValue(item)).filter((item: unknown): item is string => Boolean(item))
+    : [];
+  const endpoint = options.publicUrl && options.publicHostname
+    ? linkHtml(options.publicUrl, shortHostname(options.publicHostname), options.publicUrl)
+    : options.publicUrl ?? options.publicHostname;
+  const routeStatus = routeStatusSummary(options.observability);
+  const dnsStatus = stringValue(options.dns?.canonical?.materialization?.status ?? options.dns?.canonical?.materialization?.state);
+  const tlsStatus = stringValue(status.certificate?.state);
+  const validatorStatus = validatorStateSummary(options.validatorSummary);
+  const clientIp = stringValue(options.client?.ip);
+  const clientUserAgent = stringValue(options.client?.userAgentSummary) ?? summarizeUserAgent(options.client?.userAgent);
+
+  return `<section class="switchboard-flow" aria-label="Switchboard request flow">
+    <div class="flow-head">
+      <div>
+        <h2 class="flow-title">Overview</h2>
+      </div>
+      <div class="flow-chips" aria-label="Route proof status">
+        ${flowChipHtml("DNS", dnsStatus, dnsStatus === "propagated")}
+        ${flowChipHtml("Route", routeStatus, routeStatus === "active")}
+        ${flowChipHtml("TLS", tlsStatus, tlsStatus === "active")}
+        ${flowChipHtml("Validator", validatorStatus, validatorStatus === "healthy")}
+      </div>
+    </div>
+    <div class="flow-rail" aria-hidden="true">
+      <span class="flow-line"></span>
+      <span class="flow-dot"></span>
+      <span class="flow-dot"></span>
+      <span class="flow-dot"></span>
+    </div>
+    <div class="flow-nodes">
+      ${flowNodeHtml("Browser", "Client", [
+        ["Endpoint", endpoint],
+        ...optionalRow("Browser IP", clientIp),
+        ...optionalRow("User agent", clientUserAgent),
+        ["Session", hashHtml(status.ids?.sessionId)]
+      ])}
+      ${flowNodeHtml("Ingress", "Switchboard Gateway", [
+        ["Gateway ID", gatewayId],
+        ["Public IP", gatewayAddresses],
+        ["Traffic", gatewayTraffic],
+        ["Operator", hashHtml(options.observability?.gateway?.operatorId ?? status.routing?.operatorId)]
+      ])}
+      ${flowNodeHtml("Runtime", "Acurast Processor", [
+        ["Processor ID", hashHtml(processorId)],
+        ["Deployment", deploymentHtml(options.deployment)],
+        ["Device", hashHtml(status.acurast?.deviceAddress)],
+        ["Job network IP", jobNetworkIps]
+      ])}
+    </div>
+  </section>`;
+}
+
+function flowNodeHtml(label: string, title: string, rows: Array<[string, unknown]>): string {
+  return `<div class="flow-node">
+    <p class="flow-node-label">${escapeHtml(label)}</p>
+    <h3 class="flow-node-title">${escapeHtml(title)}</h3>
+    ${rows.map(([key, value]) => flowRowHtml(key, value)).join("")}
+  </div>`;
+}
+
+function flowRowHtml(key: string, value: unknown): string {
+  return `<div class="flow-row"><span class="flow-row-key">${escapeHtml(key)}</span><span class="flow-row-value">${renderFlowValue(value)}</span></div>`;
+}
+
+function renderFlowValue(value: unknown): string {
+  if (value === undefined || value === null || value === "") {
+    return '<span class="muted">not reported</span>';
+  }
+  if (isHtmlFragment(value)) {
+    return value.__html;
+  }
+  if (Array.isArray(value)) {
+    const list = lineListHtml(value);
+    return list ? list.__html : '<span class="muted">not reported</span>';
+  }
+  if (typeof value === "string") {
+    return escapeHtml(value);
+  }
+  if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
+    return escapeHtml(String(value));
+  }
+  return `<pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+}
+
+function flowChipHtml(label: string, value: unknown, ok: boolean): string {
+  const text = scalarValue(value) ?? "not reported";
+  const stateClass = ok ? " is-ok" : text === "not reported" || text === "unknown" ? "" : " is-warn";
+  return `<span class="flow-chip${stateClass}"><span class="flow-chip-label">${escapeHtml(label)}</span><span class="flow-chip-value">${escapeHtml(text)}</span></span>`;
+}
+
+function clientRenderInfo(value: DemoPageClientInfo | undefined): DemoPageClientInfo | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return {
+    ip: stringValue(value.ip),
+    userAgent: stringValue(value.userAgent),
+    userAgentSummary: stringValue(value.userAgentSummary)
+  };
+}
+
+function summarizeUserAgent(value: unknown): string | undefined {
+  const text = stringValue(value)?.trim();
+  if (!text) {
+    return undefined;
+  }
+  const browserPatterns: Array<[RegExp, string]> = [
+    [/\bEdg(?:A|iOS)?\/(\d+)/, "Edge"],
+    [/\bOPR\/(\d+)/, "Opera"],
+    [/\b(?:Chrome|CriOS)\/(\d+)/, "Chrome"],
+    [/\b(?:Firefox|FxiOS)\/(\d+)/, "Firefox"],
+    [/\bVersion\/(\d+)(?:\.\d+)*\b[\s\S]*\bSafari\//, "Safari"],
+    [/\bcurl\/(\d+)/i, "curl"],
+    [/\b(?:node|undici)\/?(\d+)/i, "Node"]
+  ];
+  for (const [pattern, label] of browserPatterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return `${label} v${match[1]}`;
+    }
+  }
+  if (/^undici$/i.test(text)) {
+    return "Node";
+  }
+  return "unknown browser";
+}
+
+function routeStatusSummary(observability: Record<string, any> | undefined): string | undefined {
+  const route = recordValue(recordValue(observability, "availability"), "route");
+  const routeStatus = stringValue(route?.status);
+  if (routeStatus) {
+    return routeStatus;
+  }
+  const routeState = recordValue(observability, "routeState");
+  if (routeState?.desired === true) {
+    return "active";
+  }
+  return stringValue(routeState?.reason);
 }
 
 function lineListHtml(values: unknown[]): HtmlFragment | undefined {
@@ -811,11 +1153,6 @@ function registrationBlockSummary(registration: Record<string, any> | undefined)
     return block;
   }
   return registration?.state === "registered" ? "not reported" : undefined;
-}
-
-function blockSecondaryHtml(value: unknown): HtmlFragment | undefined {
-  const block = assetHubBlockHtml(value);
-  return block ? htmlFragment(`block ${block.__html}`) : undefined;
 }
 
 function knownGatewayId(status: Record<string, any>): string | undefined {
@@ -1023,12 +1360,12 @@ function latestValidatorReportSummary(value: unknown, nowMs: number): unknown {
   const record = latestReport as Record<string, unknown>;
   return htmlFragment([
     inlineHtml(stringValue(record.reportId)),
-    inlineHtml(record.success === true ? "healthy" : record.success === false ? "unhealthy" : undefined),
-    inlineHtml(formatDateTime(record.checkedAt, { nowMs }))
+    inlineHtml("received"),
+    inlineHtml(formatDateTime(record.receivedAt ?? record.checkedAt, { nowMs }))
   ].filter(Boolean).join(" "));
 }
 
-function validatorRowsSummary(value: unknown, nowMs: number): unknown {
+function validatorRowsSummary(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
@@ -1046,11 +1383,7 @@ function validatorRowsSummary(value: unknown, nowMs: number): unknown {
   }
   const rows = validators.slice(0, 6).map((item) => {
     const record = item as Record<string, unknown>;
-    return htmlFragment([
-      inlineHtml(stringValue(record.validatorId)),
-      inlineHtml(stringValue(record.status)),
-      inlineHtml(formatDateTime(record.latestReportAt, { nowMs }))
-    ].filter(Boolean).join(" "));
+    return stringValue(record.validatorId);
   });
   return lineListHtml(rows);
 }
@@ -1192,6 +1525,14 @@ function scalarValue(value: unknown): string | undefined {
     return value.toString();
   }
   return undefined;
+}
+
+function recordValue(value: unknown, name: string): Record<string, any> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const field = (value as Record<string, unknown>)[name];
+  return field && typeof field === "object" && !Array.isArray(field) ? field as Record<string, any> : undefined;
 }
 
 function uniqueStrings(values: unknown[]): string[] {

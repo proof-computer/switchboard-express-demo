@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { signNetworkManifest } from "@proofcomputer/switchboard-sdk";
+
 import { startSwitchboardExpressDemo } from "../dist/index.js";
 
 describe("Switchboard Express demo server", () => {
@@ -160,6 +162,70 @@ describe("Switchboard Express demo server", () => {
     }
   });
 
+  it("selects the richest observability payload across signed manifest relays", async () => {
+    const signedManifest = await signNetworkManifest({
+      version: 1,
+      sequence: 1,
+      issuedAt: "2026-05-14T09:00:00.000Z",
+      chain: { chainId: "420420419" },
+      registries: {
+        active: [],
+        deprecated: [],
+        retired: []
+      },
+      relays: [
+        {
+          relayId: "relay-a",
+          apiBaseUrl: "https://relay-a.switchboard.proof.computer",
+          active: true
+        },
+        {
+          relayId: "relay-b",
+          apiBaseUrl: "https://relay-b.switchboard.proof.computer",
+          active: true
+        }
+      ]
+    }, "0x0123456789012345678901234567890123456789012345678901234567890123", { scheme: "eip191-secp256k1" });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const url = fetchUrl(input);
+      if (url === "https://control.switchboard.proof.computer/v1/network-manifest") {
+        return jsonResponse(signedManifest);
+      }
+      if (url.includes("control.switchboard.proof.computer/v1/deployment-intents/di_multi/observability")) {
+        return jsonResponse(observabilityPayloadWithValidatorSuccesses("203.0.113.10", 1));
+      }
+      if (url.includes("relay-a.switchboard.proof.computer/v1/deployment-intents/di_multi/observability")) {
+        return jsonResponse(observabilityPayloadWithValidatorSuccesses("203.0.113.11", 0));
+      }
+      if (url.includes("relay-b.switchboard.proof.computer/v1/deployment-intents/di_multi/observability")) {
+        return jsonResponse(observabilityPayloadWithValidatorSuccesses("203.0.113.12", 9));
+      }
+      return originalFetch(input, init);
+    };
+    const demo = await startSwitchboardExpressDemo({
+      runtime: observabilityRuntime("di_multi", {
+        SWITCHBOARD_RELAY_URL: "https://control.switchboard.proof.computer",
+        SWITCHBOARD_NETWORK_MANIFEST_SIGNER: signedManifest.signature.signer
+      }),
+      port: 0
+    });
+    try {
+      const status = await waitForObservedStatus(demo.url, originalFetch);
+
+      assert.equal(status.observability.relayUrl, "https://relay-b.switchboard.proof.computer");
+      assert.equal(status.observability.payload.validators.counts.successes, 9);
+      assert.deepEqual(status.observability.relays.map((relay) => relay.relayUrl).sort(), [
+        "https://control.switchboard.proof.computer",
+        "https://relay-a.switchboard.proof.computer",
+        "https://relay-b.switchboard.proof.computer"
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+
   it("does not report validation certificate SANs as customer hostnames", async () => {
     const runtime = {
       deploymentId: "57921",
@@ -196,7 +262,7 @@ describe("Switchboard Express demo server", () => {
   });
 });
 
-function observabilityRuntime(intentId) {
+function observabilityRuntime(intentId, overrides = {}) {
   return {
     deploymentId: "57921",
     async prepare() {
@@ -209,7 +275,8 @@ function observabilityRuntime(intentId) {
         SWITCHBOARD_RELAY_URL: "https://relay.example",
         SWITCHBOARD_INTENT_ID: intentId,
         SWITCHBOARD_INTENT_TOKEN: "token",
-        SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS: "60000"
+        SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS: "60000",
+        ...overrides
       }[name];
     },
     sessionId() {
@@ -230,6 +297,31 @@ function observabilityPayload(ip) {
         available: true,
         publicAddresses: [ip]
       }
+    }
+  };
+}
+
+function observabilityPayloadWithValidatorSuccesses(ip, successes) {
+  return {
+    ...observabilityPayload(ip),
+    validators: {
+      available: true,
+      counts: {
+        work: 1,
+        enabledWork: 1,
+        reportedWork: successes > 0 ? 1 : 0,
+        reports: successes,
+        successes,
+        failures: 0,
+        validators: 1
+      },
+      validators: [
+        {
+          validatorId: "acurast-validator",
+          status: successes > 0 ? "healthy" : "pending"
+        }
+      ],
+      work: []
     }
   };
 }

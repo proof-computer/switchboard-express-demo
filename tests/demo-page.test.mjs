@@ -208,4 +208,43 @@ describe("Switchboard Express demo page renderer", () => {
     assert.match(html, /validator launch pending/);
     assert.match(html, /awaiting first report/);
   });
+
+  it("renders validator work-row report evidence when relay counters lag", async () => {
+    const status = JSON.parse(await readFile(fixturePath, "utf8"));
+    status.observability.relayUrl = "https://relay-d.switchboard.proof.computer";
+    status.observability.payload.validators = {
+      available: true,
+      counts: {
+        work: 5,
+        enabledWork: 5,
+        reportedWork: 5,
+        reports: 0,
+        successes: 0,
+        failures: 0,
+        validators: 0
+      },
+      validators: [],
+      work: [
+        {
+          workId: "live-canary-validator-1",
+          mode: "route_open",
+          intervalSeconds: 60,
+          enabled: true,
+          lastReportId: "route-validation-live-canary-1",
+          lastReportAt: "2026-05-12T16:20:06.297Z",
+          lastSuccess: true
+        }
+      ],
+      recentReports: []
+    };
+
+    const html = renderDemoPage(status);
+
+    assert.match(html, /<span class="flow-chip is-ok"><span class="flow-chip-label">Validator<\/span><span class="flow-chip-value">healthy<\/span><\/span>/);
+    assert.match(html, /relay-d\.switchboard\.proof\.computer/);
+    assert.match(html, /route-validation-live-canary-1 received <time datetime="2026-05-12T16:20:06.297Z" title="2026-05-12T16:20:06.297Z">5 mins ago<\/time>/);
+    assert.match(html, /<th><span class="field-label"><button type="button" class="field-help-icon" data-tooltip="Recent successful validator reports\."/);
+    assert.doesNotMatch(html, /validator launch pending/);
+    assert.doesNotMatch(html, /awaiting first report/);
+  });
 });

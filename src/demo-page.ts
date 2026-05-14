@@ -43,6 +43,7 @@ const FIELD_HELP: Record<string, string> = {
   Endpoint: "Canonical public URL served by this Switchboard route.",
   Challenge: "Public challenge endpoint used to prove the job is reachable.",
   Relay: "Switchboard relay/control-plane endpoint used by this demo job.",
+  "Observability relay": "Relay/control-plane endpoint that supplied the selected observability snapshot.",
   "Gateway ID": "Gateway selected to publish and serve this route.",
   "Relay DNS": "DNS lookup result for the relay/control-plane hostname.",
   "Relay health": "Relay health probe result from the demo job.",
@@ -122,6 +123,7 @@ export function renderDemoPage(status: Record<string, any>, options: DemoPageRen
   const deploymentLink = deploymentHtml(deployment);
   const observability = observabilityPayload(status);
   const validatorSummary = observability?.validators;
+  const validatorCountSummary = validatorSummary ? validatorCounts(validatorSummary) : {};
   const dns = observability?.dns;
   const nowMs = timestampMs(status.now) ?? Date.now();
   const gatewayGeoIp = geoIpPayload(status.gatewayGeoIp);
@@ -683,6 +685,7 @@ export function renderDemoPage(status: Record<string, any>, options: DemoPageRen
           ["Endpoint", publicUrl ? linkHtml(publicUrl, publicLabel ?? publicUrl, publicUrl) : undefined],
           ["Challenge", challengeUrl ? linkHtml(challengeUrl, "/.well-known/proofcomputer/challenge", challengeUrl) : undefined],
           ["Relay", status.routing?.relayUrl ? linkHtml(status.routing.relayUrl, status.routing?.relayHost ?? status.routing.relayUrl, status.routing.relayUrl) : undefined],
+          ...optionalRow("Observability relay", observabilityRelayLink(status)),
           ...optionalRow("Gateway ID", knownGatewayId(status)),
           ["Relay DNS", relayDns?.ok ? formatAddressList(relayDns.addresses) : relayDns?.error],
           ["Relay health", relayHealth?.ok ? `HTTP ${relayHealth.status} in ${relayHealth.elapsedMs}ms` : relayHealth?.error]
@@ -752,11 +755,11 @@ export function renderDemoPage(status: Record<string, any>, options: DemoPageRen
         <h2>Validators</h2>
         ${tableHtml([
           ["State", validatorStateSummary(validatorSummary)],
-          ["Assigned validators", validatorSummary?.counts?.validators],
-          ["Work packages", validatorSummary?.counts?.work],
-          ["Recent reports", validatorSummary?.counts?.reports],
-          ["Successes", validatorSummary?.counts?.successes],
-          ["Failures", validatorSummary?.counts?.failures],
+          ["Assigned validators", validatorCountSummary.validators],
+          ["Work packages", validatorCountSummary.work],
+          ["Recent reports", validatorCountSummary.reports],
+          ["Successes", validatorCountSummary.successes],
+          ["Failures", validatorCountSummary.failures],
           ["Latest report", latestValidatorReportSummary(validatorSummary, nowMs)],
           ["Validators", validatorRowsSummary(validatorSummary)]
         ])}
@@ -1155,6 +1158,20 @@ function registrationBlockSummary(registration: Record<string, any> | undefined)
   return registration?.state === "registered" ? "not reported" : undefined;
 }
 
+function observabilityRelayLink(status: Record<string, any>): HtmlFragment | undefined {
+  const relayUrl = stringValue(status.observability?.relayUrl);
+  if (!relayUrl) {
+    return undefined;
+  }
+  let label = relayUrl;
+  try {
+    label = new URL(relayUrl).host;
+  } catch {
+    // Keep the raw value if the relay source was not a URL.
+  }
+  return linkHtml(relayUrl, label, relayUrl);
+}
+
 function knownGatewayId(status: Record<string, any>): string | undefined {
   return stringValue(status.routing?.gatewayId) ?? stringValue(status.gatewayId) ?? stringValue(status.gateway?.gatewayId);
 }
@@ -1319,6 +1336,12 @@ function validatorStateSummary(value: unknown): string | undefined {
     return stringValue(record.reason) ?? "validator status unavailable";
   }
   const counts = validatorCounts(record);
+  if ((counts.successes ?? 0) > 0) {
+    return "healthy";
+  }
+  if ((counts.failures ?? 0) > 0 && (counts.reports ?? 0) > 0) {
+    return "unhealthy";
+  }
   const validators = record.validators;
   if (!Array.isArray(validators) || validators.length === 0) {
     if ((counts.enabledWork ?? counts.work ?? 0) > 0) {
@@ -1338,7 +1361,7 @@ function validatorStateSummary(value: unknown): string | undefined {
   if ((counts.reports ?? 0) === 0) {
     return "awaiting first report";
   }
-  return "no validator signal yet";
+  return "reported";
 }
 
 function latestValidatorReportSummary(value: unknown, nowMs: number): unknown {
@@ -1348,6 +1371,15 @@ function latestValidatorReportSummary(value: unknown, nowMs: number): unknown {
   const summary = value as Record<string, unknown>;
   const latestReport = summary.latestReport;
   if (!latestReport || typeof latestReport !== "object" || Array.isArray(latestReport)) {
+    const latestWorkReport = latestValidatorWorkReport(summary);
+    if (latestWorkReport) {
+      return htmlFragment([
+        inlineHtml(stringValue(latestWorkReport.lastReportId) ?? stringValue(latestWorkReport.workId)),
+        inlineHtml("received"),
+        inlineHtml(formatDateTime(latestWorkReport.lastReportAt ?? latestWorkReport.lastCheckedAt, { nowMs })),
+        latestWorkReport.lastSuccess === false ? inlineHtml("failed") : undefined
+      ].filter(Boolean).join(" "));
+    }
     const counts = validatorCounts(summary);
     if ((counts.enabledWork ?? counts.work ?? 0) > 0) {
       return "awaiting first report";
@@ -1373,6 +1405,9 @@ function validatorRowsSummary(value: unknown): unknown {
   const validators = summary.validators;
   if (!Array.isArray(validators) || validators.length === 0) {
     const counts = validatorCounts(summary);
+    if ((counts.reports ?? 0) > 0 || (counts.successes ?? 0) > 0 || (counts.reportedWork ?? 0) > 0) {
+      return "reported via work packages";
+    }
     if ((counts.enabledWork ?? counts.work ?? 0) > 0) {
       return "validator launch pending";
     }
@@ -1392,14 +1427,49 @@ function validatorCounts(summary: Record<string, unknown>): Record<string, numbe
   const counts = summary.counts && typeof summary.counts === "object" && !Array.isArray(summary.counts)
     ? summary.counts as Record<string, unknown>
     : {};
+  const workRows = validatorWorkRows(summary);
+  const reportRows = validatorReportRows(summary);
+  const successfulWorkRows = workRows.filter((row) => row.lastSuccess === true);
+  const failedWorkRows = workRows.filter((row) => row.lastSuccess === false);
   return {
-    work: numberValue(counts.work),
-    enabledWork: numberValue(counts.enabledWork),
-    reports: numberValue(counts.reports),
-    successes: numberValue(counts.successes),
-    failures: numberValue(counts.failures),
+    work: maxDefined(numberValue(counts.work), workRows.length),
+    enabledWork: maxDefined(numberValue(counts.enabledWork), workRows.filter((row) => row.enabled !== false).length),
+    reportedWork: maxDefined(numberValue(counts.reportedWork), reportRows.length),
+    reports: maxDefined(numberValue(counts.reports), reportRows.length),
+    successes: maxDefined(numberValue(counts.successes), successfulWorkRows.length),
+    failures: maxDefined(numberValue(counts.failures), failedWorkRows.length),
     validators: numberValue(counts.validators)
   };
+}
+
+function validatorWorkRows(summary: Record<string, unknown>): Record<string, unknown>[] {
+  const work = summary.work;
+  return Array.isArray(work)
+    ? work.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)))
+    : [];
+}
+
+function validatorReportRows(summary: Record<string, unknown>): Record<string, unknown>[] {
+  return validatorWorkRows(summary).filter((row) => Boolean(stringValue(row.lastReportId) ?? stringValue(row.lastReportAt) ?? stringValue(row.lastCheckedAt)));
+}
+
+function latestValidatorWorkReport(summary: Record<string, unknown>): Record<string, unknown> | undefined {
+  return validatorReportRows(summary)
+    .map((row) => ({
+      row,
+      at: timestampMs(row.lastReportAt ?? row.lastCheckedAt) ?? 0
+    }))
+    .sort((left, right) => right.at - left.at)[0]?.row;
+}
+
+function maxDefined(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined) {
+    return right;
+  }
+  if (right === undefined) {
+    return left;
+  }
+  return Math.max(left, right);
 }
 
 function formatDateTime(value: unknown, options: TimeRenderOptions = {}): HtmlFragment | string | undefined {

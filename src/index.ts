@@ -11,6 +11,7 @@ import {
   maybeAcurastJobSigner,
   privateKeyJobSigner,
   SWITCHBOARD_STATUS_PATH,
+  verifySignedNetworkManifest,
   type AcurastRuntimeStd,
   type SwitchboardManagedCertificate,
   type SwitchboardRuntime,
@@ -63,9 +64,19 @@ interface DemoState {
 
 interface RelayObservabilitySnapshot {
   checkedAt: string;
+  relayUrl?: string;
   ok: boolean;
   status?: number;
   payload?: Record<string, unknown>;
+  error?: string;
+  relays?: RelayObservabilityRelaySnapshot[];
+}
+
+interface RelayObservabilityRelaySnapshot {
+  relayUrl: string;
+  ok: boolean;
+  status?: number;
+  score?: number;
   error?: string;
 }
 
@@ -96,6 +107,8 @@ interface TrafficState {
     lastAt?: string;
   }>;
 }
+
+const DEFAULT_NETWORK_MANIFEST_SIGNER = "5EpwnRzamXpqWo3jW9h4ecSJHL9LBjR6jTMW5Wzw6p9nMTh7";
 
 export function createSwitchboardExpressDemoApp(
   options: { title?: string; status?: () => Record<string, unknown> | Promise<Record<string, unknown>> } = {}
@@ -489,9 +502,24 @@ function startObservabilityPolling(runtime: SwitchboardRuntime, state: DemoState
     return;
   }
   const intervalMs = numberConfig(runtime, "SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS", 10_000);
-  void pollObservabilityOnce(runtime, state, { relayUrl, intentId, token });
+  let relayUrls: string[] | undefined;
+  let inFlight = false;
+  const poll = async () => {
+    if (inFlight) {
+      return;
+    }
+    inFlight = true;
+    try {
+      relayUrls = await resolveObservabilityRelayUrls(runtime, relayUrl);
+      allowAcurastUrlHostnames(relayUrls);
+      await pollObservabilityOnce(runtime, state, { relayUrls, intentId, token });
+    } finally {
+      inFlight = false;
+    }
+  };
+  void poll();
   state.observabilityTimer = setInterval(() => {
-    void pollObservabilityOnce(runtime, state, { relayUrl, intentId, token });
+    void poll();
   }, intervalMs);
   state.observabilityTimer.unref();
   server.once("close", () => {
@@ -505,36 +533,248 @@ function startObservabilityPolling(runtime: SwitchboardRuntime, state: DemoState
 async function pollObservabilityOnce(
   runtime: SwitchboardRuntime,
   state: DemoState,
-  input: { relayUrl: string; intentId: string; token: string }
+  input: { relayUrls: string[]; intentId: string; token: string }
 ): Promise<void> {
   const checkedAt = new Date().toISOString();
   const timeoutMs = numberConfig(runtime, "SWITCHBOARD_OBSERVABILITY_TIMEOUT_MS", 8_000);
+  const results = await Promise.all(
+    input.relayUrls.map((relayUrl) => fetchRelayObservability(relayUrl, input.intentId, input.token, timeoutMs))
+  );
+  const best = results
+    .filter((result) => result.ok && result.payload)
+    .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))[0];
+
+  if (best) {
+    state.observability = {
+      checkedAt,
+      relayUrl: best.relayUrl,
+      ok: best.ok,
+      status: best.status,
+      payload: best.payload,
+      relays: results.map(observabilityRelaySnapshot)
+    };
+    return;
+  }
+
+  const first = results[0];
+  state.observability = {
+    checkedAt,
+    relayUrl: first?.relayUrl,
+    ok: false,
+    status: first?.status,
+    payload: first?.payload,
+    error: first?.error ?? "observability request failed on every relay",
+    relays: results.map(observabilityRelaySnapshot)
+  };
+}
+
+async function fetchRelayObservability(
+  relayUrl: string,
+  intentId: string,
+  token: string,
+  timeoutMs: number
+): Promise<RelayObservabilityRelaySnapshot & { payload?: Record<string, unknown> }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs).unref();
   try {
-    const url = new URL(`/v1/deployment-intents/${encodeURIComponent(input.intentId)}/observability`, input.relayUrl);
+    const url = new URL(`/v1/deployment-intents/${encodeURIComponent(intentId)}/observability`, relayUrl);
     const response = await fetch(url, {
       headers: {
-        authorization: `Bearer ${input.token}`
+        authorization: `Bearer ${token}`
       },
       signal: controller.signal
     });
-    const payload = await response.json().catch(() => undefined) as Record<string, unknown> | undefined;
-    state.observability = {
-      checkedAt,
+    const payload = recordPayload(await response.json().catch(() => undefined));
+    return {
+      relayUrl: normalizedBaseUrl(relayUrl) ?? relayUrl,
       ok: response.ok,
       status: response.status,
+      score: payload ? observabilityScore(payload) : 0,
       payload,
       error: response.ok ? undefined : `observability request failed: ${response.status}`
     };
   } catch (error) {
-    state.observability = {
-      checkedAt,
+    return {
+      relayUrl: normalizedBaseUrl(relayUrl) ?? relayUrl,
       ok: false,
       error: error instanceof Error ? error.message : String(error)
     };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function resolveObservabilityRelayUrls(runtime: SwitchboardRuntime, relayUrl: string): Promise<string[]> {
+  const explicit = splitCsv(runtime.configValue("SWITCHBOARD_OBSERVABILITY_RELAY_URLS") ?? "")
+    .map((url) => normalizedBaseUrl(url))
+    .filter((url): url is string => Boolean(url));
+  if (explicit.length > 0) {
+    return uniqueBaseUrls([relayUrl, ...explicit]);
+  }
+
+  const timeoutMs = Math.min(numberConfig(runtime, "SWITCHBOARD_OBSERVABILITY_TIMEOUT_MS", 8_000), 3_000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs).unref();
+  try {
+    const response = await fetch(new URL("/v1/network-manifest", relayUrl), {
+      headers: {
+        accept: "application/json"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return uniqueBaseUrls([relayUrl]);
+    }
+    const expectedSigner =
+      runtime.configValue("SWITCHBOARD_NETWORK_MANIFEST_SIGNER") ??
+      runtime.configValue("PROOF_NETWORK_MANIFEST_SIGNER") ??
+      DEFAULT_NETWORK_MANIFEST_SIGNER;
+    const verified = await verifySignedNetworkManifest(await response.json(), { expectedSigner });
+    const manifest = verified.manifest;
+    const candidates = [
+      manifest.controlPlane?.apiBaseUrl,
+      ...(manifest.relays ?? [])
+        .filter((relay) => (relay.active ?? true) !== false)
+        .map((relay) => relay.controlPlaneUrl ?? relay.apiBaseUrl)
+    ].filter((url): url is string => Boolean(url));
+    return uniqueBaseUrls([relayUrl, ...candidates].filter((candidate) => observabilityRelayUrlAllowed(relayUrl, candidate)));
+  } catch {
+    return uniqueBaseUrls([relayUrl]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function observabilityRelaySnapshot(result: RelayObservabilityRelaySnapshot): RelayObservabilityRelaySnapshot {
+  return {
+    relayUrl: result.relayUrl,
+    ok: result.ok,
+    status: result.status,
+    score: result.score,
+    error: result.error
+  };
+}
+
+function observabilityScore(payload: Record<string, unknown>): number {
+  const validators = recordField(payload, "validators");
+  const counts = recordField(validators, "counts");
+  const work = validatorWorkRows(validators);
+  const successes = Math.max(numberField(counts, "successes") ?? 0, work.filter((row) => row.lastSuccess === true).length);
+  const reports = Math.max(
+    numberField(counts, "reports") ?? 0,
+    work.filter((row) => Boolean(stringField(row, "lastReportId") ?? stringField(row, "lastReportAt"))).length
+  );
+  const reportedWork = numberField(counts, "reportedWork") ?? 0;
+  const failures = Math.max(numberField(counts, "failures") ?? 0, work.filter((row) => row.lastSuccess === false).length);
+  const dns = recordField(recordField(recordField(payload, "dns"), "canonical"), "materialization");
+  const route = recordField(recordField(payload, "availability"), "route");
+  const routeState = recordField(payload, "routeState");
+
+  let score = successes * 100_000 + reports * 10_000 + reportedWork * 1_000 - failures * 100;
+  if (stringField(dns, "status") === "propagated" || stringField(dns, "state") === "propagated") score += 250;
+  if (stringField(route, "status") === "active") score += 250;
+  if (routeState?.runtimeHttpsReady === true) score += 100;
+  if (recordField(payload, "gateway")) score += 25;
+  if (recordField(payload, "routeMetrics")) score += 10;
+  return score;
+}
+
+function validatorWorkRows(summary: Record<string, unknown> | undefined): Record<string, unknown>[] {
+  const work = summary?.work;
+  return Array.isArray(work)
+    ? work.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)))
+    : [];
+}
+
+function recordPayload(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function numberField(value: unknown, name: string): number | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const field = (value as Record<string, unknown>)[name];
+  if (typeof field === "number" && Number.isFinite(field)) {
+    return field;
+  }
+  if (typeof field === "string" && /^[0-9]+$/.test(field)) {
+    return Number(field);
+  }
+  return undefined;
+}
+
+function allowAcurastUrlHostnames(urls: string[]): void {
+  const addAllowedHostnames = acurastStd()?.net?.addAllowedHostnames;
+  if (typeof addAllowedHostnames !== "function") {
+    return;
+  }
+  const hostnames = uniqueHostnames(
+    urls.flatMap((url) => {
+      try {
+        return [new URL(url).hostname];
+      } catch {
+        return [];
+      }
+    })
+  );
+  if (hostnames.length === 0) {
+    return;
+  }
+  try {
+    void Promise.resolve(addAllowedHostnames(hostnames)).catch(() => undefined);
+  } catch {
+    return;
+  }
+}
+
+function observabilityRelayUrlAllowed(bootstrapRelayUrl: string, candidateUrl: string): boolean {
+  let bootstrap: URL;
+  let candidate: URL;
+  try {
+    bootstrap = new URL(bootstrapRelayUrl);
+    candidate = new URL(candidateUrl);
+  } catch {
+    return false;
+  }
+  if (!["http:", "https:"].includes(candidate.protocol)) {
+    return false;
+  }
+  if (bootstrap.protocol === "https:" && candidate.protocol !== "https:") {
+    return false;
+  }
+  if (isSwitchboardProofHost(bootstrap.hostname)) {
+    return isSwitchboardProofHost(candidate.hostname);
+  }
+  if (isLocalHostname(bootstrap.hostname)) {
+    return isLocalHostname(candidate.hostname);
+  }
+  return candidate.hostname === bootstrap.hostname;
+}
+
+function isSwitchboardProofHost(hostname: string): boolean {
+  const normalized = normalizeHostname(hostname);
+  return normalized === "switchboard.proof.computer" || normalized.endsWith(".switchboard.proof.computer");
+}
+
+function isLocalHostname(hostname: string): boolean {
+  const normalized = normalizeHostname(hostname);
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+function uniqueBaseUrls(urls: string[]): string[] {
+  return [...new Set(urls.map((url) => normalizedBaseUrl(url)).filter((url): url is string => Boolean(url)))];
+}
+
+function normalizedBaseUrl(rawUrl: string): string | undefined {
+  try {
+    const url = new URL(rawUrl);
+    url.pathname = "/";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return undefined;
   }
 }
 

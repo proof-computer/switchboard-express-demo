@@ -1005,17 +1005,24 @@ function runtimeSummary(runtime?: SwitchboardRuntime, state?: DemoState): Record
 }
 
 function networkAddressSummary(): Record<string, unknown> {
-  return {
-    publicIpv4: [
-      ...new Set(
-        Object.values(networkInterfaces())
-          .flatMap((values) => values ?? [])
-          .filter((item) => item.internal === false && String(item.family) === "IPv4")
-          .map((item) => item.address)
-          .filter((value): value is string => typeof value === "string" && value.length > 0)
-      )
-    ]
-  };
+  try {
+    return {
+      publicIpv4: [
+        ...new Set(
+          Object.values(networkInterfaces())
+            .flatMap((values) => values ?? [])
+            .filter((item) => item.internal === false && String(item.family) === "IPv4")
+            .map((item) => item.address)
+            .filter((value): value is string => typeof value === "string" && value.length > 0)
+        )
+      ]
+    };
+  } catch (error) {
+    return {
+      publicIpv4: [],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
 
 function configPresence(runtime: SwitchboardRuntime, names: string[]): Record<string, boolean> {

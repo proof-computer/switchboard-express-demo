@@ -17,7 +17,7 @@ publishing is prepared but not active yet.
 ## Use
 
 ```ts
-import { startSwitchboardExpressDemo } from "@proofcomputer/switchboard-express-demo";
+import { startSwitchboardExpressDemo } from "@proof-computer/switchboard-express-demo";
 
 void startSwitchboardExpressDemo().catch((error) => {
   console.error(error);

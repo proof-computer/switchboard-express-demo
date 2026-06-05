@@ -5,18 +5,18 @@ import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import express, { type Application } from "express";
-import { createSwitchboardRouter } from "@proofcomputer/switchboard-express";
+import { createSwitchboardRouter } from "@proof-computer/switchboard-express";
 import {
   createSwitchboardRuntime,
   maybeAcurastJobSigner,
   privateKeyJobSigner,
   SWITCHBOARD_STATUS_PATH,
-  verifySignedNetworkManifest,
   type AcurastRuntimeStd,
   type SwitchboardManagedCertificate,
   type SwitchboardRuntime,
   type SwitchboardRuntimeOptions
-} from "@proofcomputer/switchboard-sdk";
+} from "@proof-computer/switchboard-runtime";
+import { verifySignedNetworkManifest } from "@proof-computer/switchboard-workflows/network-manifest";
 
 import { renderDemoPage } from "./demo-page.js";
 import { runRelayDiagnostics } from "./relay-diagnostics.js";
@@ -47,6 +47,7 @@ interface DemoState {
   certificates: SwitchboardManagedCertificate[];
   registration?: Record<string, unknown>;
   relayDiagnostics?: Record<string, unknown>;
+  gatewayAdmissionDiagnostics?: Record<string, unknown>;
   observability?: RelayObservabilitySnapshot;
   observabilityTimer?: NodeJS.Timeout;
   readyReportTimer?: NodeJS.Timeout;
@@ -211,8 +212,9 @@ export async function startSwitchboardExpressDemo(
     port: actualPort,
     certificateHostnames: state.certificates.map((certificate) => certificate.hostname)
   });
-  await reportReadyAfterListen(runtime, { protocol, host, port: actualPort });
-  startReadyReportRetry(runtime, state, server, { protocol, host, port: actualPort });
+  state.gatewayAdmissionDiagnostics = await runGatewayAdmissionDiagnostics(runtime);
+  await reportReadyAfterListen(runtime, { protocol, host, port: actualPort, gatewayAdmissionDiagnostics: state.gatewayAdmissionDiagnostics });
+  startReadyReportRetry(runtime, state, server, { protocol, host, port: actualPort, gatewayAdmissionDiagnostics: state.gatewayAdmissionDiagnostics });
 
   if (runtime.configValue("SWITCHBOARD_RELAY_DIAGNOSTICS") === "true") {
     void runRelayDiagnosticsOnce(runtime, state);
@@ -288,6 +290,7 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
     observability: state.observability,
     acurast: acurastRuntimeStatus(runtime),
     relayDiagnostics: state.relayDiagnostics,
+    gatewayAdmissionDiagnostics: state.gatewayAdmissionDiagnostics,
     runtime: runtimeSummary(runtime, state),
     network: networkAddressSummary(),
     envPresence: configPresence(runtime, [
@@ -428,7 +431,7 @@ function startReadyReportRetry(
   runtime: SwitchboardRuntime,
   state: DemoState,
   server: HttpServer,
-  details: { protocol: "http" | "https"; host: string; port: number }
+  details: { protocol: "http" | "https"; host: string; port: number; gatewayAdmissionDiagnostics?: Record<string, unknown> }
 ): void {
   if (runtime.configValue("SWITCHBOARD_READY_REPORT_RETRY") === "false") {
     return;
@@ -451,7 +454,7 @@ function startReadyReportRetry(
 
 async function reportReadyAfterListen(
   runtime: SwitchboardRuntime,
-  details: { protocol: "http" | "https"; host: string; port: number }
+  details: { protocol: "http" | "https"; host: string; port: number; gatewayAdmissionDiagnostics?: Record<string, unknown> }
 ): Promise<void> {
   try {
     await runtime.reportReady(details);
@@ -739,6 +742,100 @@ function allowAcurastUrlHostnames(urls: string[]): void {
     void Promise.resolve(addAllowedHostnames(hostnames)).catch(() => undefined);
   } catch {
     return;
+  }
+}
+
+async function runGatewayAdmissionDiagnostics(runtime: SwitchboardRuntime): Promise<Record<string, unknown> | undefined> {
+  if (runtime.configValue("SWITCHBOARD_GATEWAY_ADMISSION_DIAGNOSTICS") === "false") {
+    return undefined;
+  }
+  const rawUrl = runtime.configValue("GATEWAY_UPSTREAM_ADMISSION_URL");
+  if (!rawUrl) {
+    return undefined;
+  }
+
+  const checkedAt = new Date().toISOString();
+  let admissionUrl: URL;
+  try {
+    admissionUrl = new URL(rawUrl);
+  } catch (error) {
+    return {
+      checkedAt,
+      admissionUrl: rawUrl,
+      error: safeError(error)
+    };
+  }
+
+  const timeoutMs = numberConfig(runtime, "SWITCHBOARD_GATEWAY_ADMISSION_DIAGNOSTICS_TIMEOUT_MS", 3_000);
+  const healthUrl = new URL("/health", admissionUrl);
+  const result: Record<string, unknown> = {
+    checkedAt,
+    admissionHost: admissionUrl.host,
+    admissionProtocol: admissionUrl.protocol,
+    healthUrl: healthUrl.toString(),
+    network: networkAddressSummary()
+  };
+
+  const addAllowedHostnames = acurastStd()?.net?.addAllowedHostnames;
+  if (typeof addAllowedHostnames === "function") {
+    result.whitelist = await promiseWithTimeout(
+      Promise.resolve(addAllowedHostnames([admissionUrl.hostname])),
+      timeoutMs,
+      "gateway admission hostname whitelist timed out"
+    ).then(
+      (value) => ({ ok: true, hostname: admissionUrl.hostname, result: serializablePreview(value) }),
+      (error) => ({ ok: false, hostname: admissionUrl.hostname, error: safeError(error) })
+    );
+  } else {
+    result.whitelist = { ok: false, skipped: true, reason: "std_net_add_allowed_hostnames_unavailable" };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(healthUrl, {
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    const bodyPreview = (await response.text()).slice(0, 500);
+    result.healthFetch = {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      elapsedMs: Date.now() - startedAt,
+      bodyPreview
+    };
+  } catch (error) {
+    result.healthFetch = {
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      error: safeError(error)
+    };
+  }
+
+  await runtime.log("gateway-admission-diagnostics", result).catch(() => undefined);
+  return result;
+}
+
+function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+    timeout.unref();
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
+function serializablePreview(value: unknown): unknown {
+  if (value === undefined || value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return String(value);
   }
 }
 

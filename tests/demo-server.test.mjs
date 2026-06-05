@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { signNetworkManifest } from "@proofcomputer/switchboard-sdk";
+import { signNetworkManifest } from "@proof-computer/switchboard-workflows/network-manifest";
 
 import { startSwitchboardExpressDemo } from "../dist/index.js";
 

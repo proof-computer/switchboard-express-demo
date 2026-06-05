@@ -211,7 +211,7 @@ export async function startSwitchboardExpressDemo(
     port: actualPort,
     certificateHostnames: state.certificates.map((certificate) => certificate.hostname)
   });
-  await runtime.reportReady({ protocol, host, port: actualPort });
+  await reportReadyAfterListen(runtime, { protocol, host, port: actualPort });
   startReadyReportRetry(runtime, state, server, { protocol, host, port: actualPort });
 
   if (runtime.configValue("SWITCHBOARD_RELAY_DIAGNOSTICS") === "true") {
@@ -447,6 +447,20 @@ function startReadyReportRetry(
   }, intervalMs);
   state.readyReportTimer.unref();
   server.once("close", () => stopReadyReportRetry(state));
+}
+
+async function reportReadyAfterListen(
+  runtime: SwitchboardRuntime,
+  details: { protocol: "http" | "https"; host: string; port: number }
+): Promise<void> {
+  try {
+    await runtime.reportReady(details);
+  } catch (error) {
+    await runtime.log("ready-report-failed", {
+      retrying: runtime.configValue("SWITCHBOARD_READY_REPORT_RETRY") !== "false",
+      error: safeError(error)
+    }).catch(() => undefined);
+  }
 }
 
 function stopReadyReportRetry(state: DemoState): void {
@@ -1078,6 +1092,13 @@ function numberConfig(runtime: SwitchboardRuntime, name: string, fallback: numbe
   }
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function safeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message, stack: error.stack };
+  }
+  return { message: String(error) };
 }
 
 function acurastStd(): AcurastRuntimeStd | undefined {

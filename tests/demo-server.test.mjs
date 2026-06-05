@@ -70,6 +70,9 @@ describe("Switchboard Express demo server", () => {
       async log() {},
       async reportReady() {
         readyReports += 1;
+        if (readyReports === 1) {
+          throw new Error("relay temporarily unavailable");
+        }
       },
       configValue(name) {
         return {

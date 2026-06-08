@@ -65,6 +65,7 @@ interface DemoState {
 
 interface RelayObservabilitySnapshot {
   checkedAt: string;
+  lastSuccessfulAt?: string;
   relayUrl?: string;
   ok: boolean;
   status?: number;
@@ -110,6 +111,8 @@ interface TrafficState {
 }
 
 const DEFAULT_NETWORK_MANIFEST_SIGNER = "5EpwnRzamXpqWo3jW9h4ecSJHL9LBjR6jTMW5Wzw6p9nMTh7";
+const DEFAULT_OBSERVABILITY_POLL_INTERVAL_MS = 60_000;
+const OBSERVABILITY_DISCOVERY_NETWORK_MANIFEST = "network-manifest";
 
 export function createSwitchboardExpressDemoApp(
   options: { title?: string; status?: () => Record<string, unknown> | Promise<Record<string, unknown>> } = {}
@@ -312,6 +315,8 @@ async function demoStatus(runtime: SwitchboardRuntime, state: DemoState): Promis
       "SWITCHBOARD_OBSERVABILITY",
       "SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS",
       "SWITCHBOARD_OBSERVABILITY_TIMEOUT_MS",
+      "SWITCHBOARD_OBSERVABILITY_RELAY_URLS",
+      "SWITCHBOARD_OBSERVABILITY_DISCOVERY",
       "SWITCHBOARD_LOG_URL",
       "SWITCHBOARD_LOG_TOKEN",
       "SWITCHBOARD_LOG_ENCRYPTION_KEY",
@@ -518,7 +523,7 @@ function startObservabilityPolling(runtime: SwitchboardRuntime, state: DemoState
   if (!relayUrl || !intentId || !token) {
     return;
   }
-  const intervalMs = numberConfig(runtime, "SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS", 10_000);
+  const intervalMs = numberConfig(runtime, "SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS", DEFAULT_OBSERVABILITY_POLL_INTERVAL_MS);
   let relayUrls: string[] | undefined;
   let inFlight = false;
   const poll = async () => {
@@ -564,6 +569,7 @@ async function pollObservabilityOnce(
   if (best) {
     state.observability = {
       checkedAt,
+      lastSuccessfulAt: checkedAt,
       relayUrl: best.relayUrl,
       ok: best.ok,
       status: best.status,
@@ -574,6 +580,20 @@ async function pollObservabilityOnce(
   }
 
   const first = results[0];
+  if (state.observability?.payload) {
+    const previous = state.observability;
+    state.observability = {
+      ...previous,
+      checkedAt,
+      lastSuccessfulAt: previous.lastSuccessfulAt ?? previous.checkedAt,
+      ok: false,
+      status: first?.status,
+      error: first?.error ?? "observability request failed on every relay",
+      relays: results.map(observabilityRelaySnapshot)
+    };
+    return;
+  }
+
   state.observability = {
     checkedAt,
     relayUrl: first?.relayUrl,
@@ -627,6 +647,11 @@ async function resolveObservabilityRelayUrls(runtime: SwitchboardRuntime, relayU
     .filter((url): url is string => Boolean(url));
   if (explicit.length > 0) {
     return uniqueBaseUrls([relayUrl, ...explicit]);
+  }
+
+  const discovery = runtime.configValue("SWITCHBOARD_OBSERVABILITY_DISCOVERY")?.trim().toLowerCase();
+  if (discovery !== OBSERVABILITY_DISCOVERY_NETWORK_MANIFEST) {
+    return uniqueBaseUrls([relayUrl]);
   }
 
   const timeoutMs = Math.min(numberConfig(runtime, "SWITCHBOARD_OBSERVABILITY_TIMEOUT_MS", 8_000), 3_000);

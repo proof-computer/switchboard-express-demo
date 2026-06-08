@@ -33,9 +33,12 @@ environment-presence diagnostics.
 
 When `SWITCHBOARD_RELAY_URL`, `SWITCHBOARD_INTENT_ID`, and
 `SWITCHBOARD_INTENT_TOKEN` are present, the app polls
-`GET /v1/deployment-intents/:intentId/observability` every 10 seconds. Set
-`SWITCHBOARD_OBSERVABILITY=false` to disable polling, or
-`SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS` to change the interval.
+`GET /v1/deployment-intents/:intentId/observability` on the configured home
+relay every 60 seconds. Set `SWITCHBOARD_OBSERVABILITY=false` to disable
+polling, or `SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS` to change the
+interval. `SWITCHBOARD_OBSERVABILITY_RELAY_URLS` can add explicit diagnostic
+relays. Set `SWITCHBOARD_OBSERVABILITY_DISCOVERY=network-manifest` only when
+you intentionally want signed-manifest fanout across the relay fleet.
 
 ## Local Preview
 

@@ -165,6 +165,126 @@ describe("Switchboard Express demo server", () => {
     }
   });
 
+  it("polls only the home relay by default", async () => {
+    const originalFetch = globalThis.fetch;
+    let manifestFetches = 0;
+    let homeFetches = 0;
+    let peerFetches = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = fetchUrl(input);
+      if (url === "https://control.switchboard.proof.computer/v1/network-manifest") {
+        manifestFetches += 1;
+        return jsonResponse({ ok: false });
+      }
+      if (url.includes("control.switchboard.proof.computer/v1/deployment-intents/di_home/observability")) {
+        homeFetches += 1;
+        return jsonResponse(observabilityPayloadWithValidatorSuccesses("203.0.113.10", 3));
+      }
+      if (url.includes("relay-b.switchboard.proof.computer/v1/deployment-intents/di_home/observability")) {
+        peerFetches += 1;
+        return jsonResponse(observabilityPayloadWithValidatorSuccesses("203.0.113.12", 9));
+      }
+      return originalFetch(input, init);
+    };
+    const demo = await startSwitchboardExpressDemo({
+      runtime: observabilityRuntime("di_home", {
+        SWITCHBOARD_RELAY_URL: "https://control.switchboard.proof.computer"
+      }),
+      port: 0
+    });
+    try {
+      const status = await waitForObservedStatus(demo.url, originalFetch);
+
+      assert.equal(status.observability.relayUrl, "https://control.switchboard.proof.computer");
+      assert.equal(status.observability.payload.validators.counts.successes, 3);
+      assert.deepEqual(status.observability.relays.map((relay) => relay.relayUrl), [
+        "https://control.switchboard.proof.computer"
+      ]);
+      assert.equal(manifestFetches, 0);
+      assert.equal(homeFetches, 1);
+      assert.equal(peerFetches, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+
+  it("uses a 60 second observability poll interval by default", async () => {
+    const originalFetch = globalThis.fetch;
+    let observabilityFetches = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = fetchUrl(input);
+      if (url.includes("relay.example/v1/deployment-intents/di_interval/observability")) {
+        observabilityFetches += 1;
+        return jsonResponse(observabilityPayloadWithValidatorSuccesses("203.0.113.10", 1));
+      }
+      return originalFetch(input, init);
+    };
+    const demo = await startSwitchboardExpressDemo({
+      runtime: observabilityRuntime("di_interval", {
+        SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS: undefined
+      }),
+      port: 0
+    });
+    try {
+      await waitForObservedStatus(demo.url, originalFetch);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await originalFetch(new URL("/status", demo.url));
+
+      assert.equal(observabilityFetches, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+
+  it("keeps the previous observability payload on transient relay rate limits", async () => {
+    const originalFetch = globalThis.fetch;
+    let observabilityFetches = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = fetchUrl(input);
+      if (url.includes("relay.example/v1/deployment-intents/di_rate_limit/observability")) {
+        observabilityFetches += 1;
+        if (observabilityFetches === 1) {
+          return jsonResponse(observabilityPayloadWithValidatorSuccesses("203.0.113.10", 4));
+        }
+        return new Response(JSON.stringify({ ok: false, error: "rate_limited" }), {
+          status: 429,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return originalFetch(input, init);
+    };
+    const demo = await startSwitchboardExpressDemo({
+      runtime: observabilityRuntime("di_rate_limit", {
+        SWITCHBOARD_OBSERVABILITY_POLL_INTERVAL_MS: "25"
+      }),
+      port: 0
+    });
+    try {
+      const first = await waitForObservedStatus(demo.url, originalFetch);
+      assert.equal(first.observability.payload.validators.counts.successes, 4);
+
+      let latest = first;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        latest = await originalFetch(new URL("/status", demo.url)).then((response) => response.json());
+        if (latest.observability?.status === 429) {
+          break;
+        }
+      }
+
+      assert.equal(latest.observability.ok, false);
+      assert.equal(latest.observability.status, 429);
+      assert.equal(latest.observability.payload.validators.counts.successes, 4);
+      assert.equal(latest.observability.relays[0].status, 429);
+      assert.equal(typeof latest.observability.lastSuccessfulAt, "string");
+    } finally {
+      globalThis.fetch = originalFetch;
+      await new Promise((resolve, reject) => demo.server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+
   it("selects the richest observability payload across signed manifest relays", async () => {
     const signedManifest = await signNetworkManifest({
       version: 1,
@@ -209,6 +329,7 @@ describe("Switchboard Express demo server", () => {
     const demo = await startSwitchboardExpressDemo({
       runtime: observabilityRuntime("di_multi", {
         SWITCHBOARD_RELAY_URL: "https://control.switchboard.proof.computer",
+        SWITCHBOARD_OBSERVABILITY_DISCOVERY: "network-manifest",
         SWITCHBOARD_NETWORK_MANIFEST_SIGNER: signedManifest.signature.signer
       }),
       port: 0
